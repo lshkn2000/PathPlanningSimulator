@@ -28,7 +28,7 @@ def run_sim(env, episodes=1, render=True):
                 break
         print("{} episode".format(i_episode + 1))
 
-        # env.render()
+        env.render()
 
 
 if __name__ == "__main__":
@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     # 장애물 소환
     # 동적 장애물
-    dy_obstacle_num = 5
+    dy_obstacle_num = 10
     dy_obstacles = [None] * dy_obstacle_num
     for i in range(dy_obstacle_num):
         dy_obstacle = DynamicObstacle()
@@ -85,6 +85,6 @@ if __name__ == "__main__":
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
 
-    run_sim(env, episodes=2, render=True)
+    run_sim(env, episodes=5, render=True)
 
 

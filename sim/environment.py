@@ -40,7 +40,7 @@ class Environment(object):
         self.time_limit = time_limit
 
         # 충돌 거리 설정
-        self.safe_distance = 1
+        self.safe_distance = 0.3
 
     def set_robot(self, robot):
         self.robot = robot
@@ -230,6 +230,7 @@ class Environment(object):
         '''
         로봇이 우선 배치되고 해당 배치된 위치를 기준으로 장애물 배치
         '''
+
         robot_px, robot_py = self.robot.position
         robot_gx, robot_gy = self.robot.goal
         no_collision_distance = self.safe_distance
@@ -256,7 +257,7 @@ class Environment(object):
 
             while True:
                 # 맵의 중심을 (0,0)으로 기준 잡았을 경우
-                obstacle_gx = np.random.random() * (self.square_width * 0.5) * sign
+                obstacle_gx = np.random.random() * (self.square_width * 0.5) * -sign
                 obstacle_gy = (np.random.random() - 0.5) * self.square_height
 
                 # 장애물의 목적지가 로봇의 목적지와 안전거리 이상 떨어져 있게 목적지 위치 설정
