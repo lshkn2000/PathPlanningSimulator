@@ -1,7 +1,6 @@
 from collections import namedtuple
 from sim.agent import Agent
 
-
 Action = namedtuple('Action', ['vx', 'vy'])
 
 
@@ -15,10 +14,7 @@ class DynamicObstacle(Agent):
             raise AttributeError("Need to set policy!")
 
         # set state information
-        dir_x = self.gx - self.px
-        dir_y = self.gy - self.py
-
-        state = [[dir_x, dir_y], ob]    # 동적 장애물에 정책에는 각 장애물의 목적지로의 방향 벡터 정보를 추가함.
+        state = [self.self_state_w_goal, ob]  # [(장애물 자신의 정보), [(다른 장애물들 정보 ; x, y, vx, vy, radius)]]
 
         # choose action using state by policy
         action = self.policy.predict(state)

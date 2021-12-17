@@ -15,13 +15,13 @@ class Linear(Policy):
 
     def predict(self, state):
         # State : 2개의 리스트로 구성
-        # 0. 현재 진행 방향 벡터 dir_x, dir_y
+        # 0. 자기 자신의 정보 (self.px, self.py, self.vx, self.vy, self.gx, self.gy, self.radius)
         # 1. 자기 자신 제외한 dynamic obstacles 의 (px, py, vx, vy, radius)
 
         # 목적지로의 방향벡터의 정규화
-        direction_vector = state[0]
-        dir_x = direction_vector[0]
-        dir_y = direction_vector[1]
+        self_state = state[0]
+        dir_x = self_state[4] - self_state[0]
+        dir_y = self_state[5] - self_state[1]
 
         l2 = pow(dir_x, 2) + pow(dir_y, 2)
         l2_norm = pow(l2, 0.5)

@@ -1,12 +1,13 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from matplotlib.patches import Circle, Rectangle
+from matplotlib.patches import Circle, Rectangle, ConnectionPatch
 import matplotlib.lines as mlines
 import matplotlib.animation as animation
+import rvo2
 
 
 class Environment(object):
-    def __init__(self, time_step, time_limit):
+    def __init__(self, time_step, time_limit, start_rvo2=True):
         '''
         환경 맵 세팅(main)
         장애물 배치(main) -> 세팅(Env) : 완료
@@ -39,8 +40,16 @@ class Environment(object):
         self.global_time = None
         self.time_limit = time_limit
 
+        self.step_cnt = 0
+
         # 충돌 거리 설정
-        self.safe_distance = 0.3
+        self.safe_distance = 1.0 # 로봇과 장애물이 소환되는 위치의 거리를 세팅
+
+        # rvo2 실행
+        self.start_rvo2 = start_rvo2
+        if self.start_rvo2:
+            self.params = {"neighborDist": 10, "maxNeighbors": 10, "timeHorizon": 5, "timeHorizonObst": 5}
+            self.sim = None
 
     def set_robot(self, robot):
         self.robot = robot
@@ -73,22 +82,30 @@ class Environment(object):
         # 로봇 위치 정보 저장
         self.robot_position.append(self.robot.position)
 
-        # vx, vy 정보를 이용하여 각 step 적용 용도로 사용
-        dy_obstacles_actions = []
+        if self.start_rvo2:
+            # rvo2를 이용하여서 reset 단계에서 이미 장애물들의 이동 정보들을 다 얻은 경우
+            # self.dy_obstacles_positions
+            pass
+        else:
+            # 직접 장애물마다 정책을 장착하여 행동하는 경우
+            # vx, vy 정보를 이용하여 각 step 적용 용도로 사용
+            dy_obstacles_actions = []
 
-        for dy_obstacle in self.dy_obstacles:
-            ob = [other_dy_obstacle.self_state_wo_goal for other_dy_obstacle in self.dy_obstacles if
-                  other_dy_obstacle != dy_obstacle]  # tuple (px, py, vx, vy, radius)
-            obstacle_action = dy_obstacle.act(ob)  # vx, vy
-            dy_obstacles_actions.append(obstacle_action)
+            for dy_obstacle in self.dy_obstacles:
+                # obstacles data without itself
+                ob = [other_dy_obstacle.self_state_wo_goal for other_dy_obstacle in self.dy_obstacles if
+                      other_dy_obstacle != dy_obstacle]  # tuple (px, py, vx, vy, radius)
+                obstacle_action = dy_obstacle.act(ob)  # vx, vy
+                dy_obstacles_actions.append(obstacle_action)
 
-        for i, obstacle_action in enumerate(dy_obstacles_actions):
-            # 각 장애물 행동 하고
-            self.dy_obstacles[i].step(obstacle_action)
-            # 장애물의 위치 정보 저장
-            self.dy_obstacles_positions[i].append(self.dy_obstacles[i].position)
+            for i, obstacle_action in enumerate(dy_obstacles_actions):
+                # 각 장애물 행동 하고
+                self.dy_obstacles[i].step(obstacle_action)
+                # 장애물의 위치 정보 저장
+                self.dy_obstacles_positions[i].append(self.dy_obstacles[i].position)
 
         self.global_time += self.time_step
+        self.step_cnt += 1
 
         # collision check btw robot and dynamic obstacle
         '''
@@ -100,6 +117,8 @@ class Environment(object):
         # 동적 장애물 충돌 검사
         closest_dist_of_dy_obs = float("inf")
         for i, dy_obstacle in enumerate(self.dy_obstacles):
+            if self.start_rvo2:
+                dy_obstacle.px, dy_obstacle.py = self.dy_obstacles_positions[i][self.step_cnt]
             dx = dy_obstacle.px - self.robot.px
             dy = dy_obstacle.py - self.robot.py
 
@@ -111,6 +130,8 @@ class Environment(object):
 
             if closest_dist_of_dy_obs - self.robot.radius - dy_obstacle.radius < 0:
                 collision = True
+                # print("collision distance : ", closest_dist_of_dy_obs - self.robot.radius - dy_obstacle.radius)
+                print("collision!")
                 break
 
         # 정적 장애물 충돌 검사
@@ -120,7 +141,8 @@ class Environment(object):
             if st_obstacle.rectangle:
                 # 사각형의 좌상단, 우하단의 점을 기준으로 현재 로봇의 위치에 대한 최단 거리의 점을 클램핑으로 계산
                 rect_left_floor = (st_obstacle.px - (st_obstacle.width / 2), st_obstacle.py + (st_obstacle.height / 2))
-                rect_right_bottom = (st_obstacle.px + (st_obstacle.width / 2), st_obstacle.py - (st_obstacle.height / 2))
+                rect_right_bottom = (
+                    st_obstacle.px + (st_obstacle.width / 2), st_obstacle.py - (st_obstacle.height / 2))
 
                 clamped_x = max(rect_left_floor[0], min(rect_right_bottom[0], self.robot.px))
                 clamped_y = max(rect_right_bottom[1], min(rect_left_floor[1], self.robot.py))
@@ -185,9 +207,10 @@ class Environment(object):
 
         return next_ob, reward, done, info
 
-    def reset(self, random_position=False, random_goal=False):
+    def reset(self, random_position=False, random_goal=False, max_steps=1000):
         # 에피소드 실행 시간 초기화
         self.global_time = 0
+        self.step_cnt = 0
 
         # 로봇, 장애물의 위치 정보 초기화
         self.robot_position = []
@@ -218,6 +241,52 @@ class Environment(object):
         # 장애물 위치 초기화
         self.generate_random_position()
 
+        if self.start_rvo2:
+            # self.dy_obstacles_positions 을 rvo2를 이용하여 정보를 얻는다.
+            radius = 0.3
+            max_speed = 1
+            self.sim = rvo2.PyRVOSimulator(self.time_step, self.params['neighborDist'], self.params['maxNeighbors'],
+                                           self.params['timeHorizon'], self.params['timeHorizonObst'], radius,
+                                           max_speed)
+
+            for i, dy_obstacle in enumerate(self.dy_obstacles_list):
+                # 장애물 정보 추가
+                agent = self.sim.addAgent(dy_obstacle.position, self.params['neighborDist'], self.params['maxNeighbors'],
+                                          self.params['timeHorizon'], self.params['timeHorizonObst'], dy_obstacle.radius,
+                                          dy_obstacle.v_pref, dy_obstacle.velocity)
+
+                pref_velocity = dy_obstacle.goal[0] - dy_obstacle.position[0], dy_obstacle.goal[1] - dy_obstacle.position[1]
+                if np.linalg.norm(pref_velocity) > 1:
+                    pref_velocity /= np.linalg.norm(pref_velocity)
+                self.sim.setAgentPrefVelocity(agent, tuple(pref_velocity))
+
+            print('Simulation has %i agents and %i obstacle vertices in it.' %
+                  (self.sim.getNumAgents(), self.sim.getNumObstacleVertices()))
+
+            check_dy_obstacles_reach_goal = [0] * len(self.dy_obstacles_list)   #rvo2의 목적지 도달 확인용
+            checK_reach_goal_pose = [0] * len(self.dy_obstacles_list)           #rvo2의 목적지 도달 위치 기록용
+            for step in range(max_steps):
+                self.sim.doStep()
+
+                for i, dy_obstacle in enumerate(self.dy_obstacles_list):
+                    # 목적지에 도달하면 멈추어서 정적 장애물 역할을 함
+                    if not check_dy_obstacles_reach_goal[i]:
+                        # 목적지 도달 체크
+                        rvo2_dy_obstacle_pose = self.sim.getAgentPosition(i)
+                        dy_obstacle_goal = dy_obstacle.goal
+                        reach_goal = np.linalg.norm(np.array(rvo2_dy_obstacle_pose) - np.array(dy_obstacle_goal)) < dy_obstacle.radius
+
+                        check_dy_obstacles_reach_goal[i] = reach_goal
+                        checK_reach_goal_pose[i] = rvo2_dy_obstacle_pose
+
+                    # 목적지 도달하면 그 자리에 멈춤
+                    if check_dy_obstacles_reach_goal[i]:
+                        self.sim.setAgentVelocity(i, (0, 0))
+                        self.dy_obstacles_positions[i].append(checK_reach_goal_pose[i])
+                    else:
+                        self.dy_obstacles_positions[i].append(self.sim.getAgentPosition(i))
+
+
         # 로봇과 장애물의 상태 정보 출력
         robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_goal]
         dy_obstacle_ob = [dy_obstacle.self_state_wo_goal for dy_obstacle in self.dy_obstacles]
@@ -238,11 +307,12 @@ class Environment(object):
         for i, dy_obstacle in enumerate(self.dy_obstacles):
             # obstacles 의 속성들(v_pref, radius) 변경
             dy_obstacle.v_pref = np.random.uniform(0.5, 1.5)
-            dy_obstacle.radius = np.random.uniform(0.3, 0.5)
+            dy_obstacle.radius = np.random.uniform(0.2, 0.3)
 
             # 장애물 위치 변경 및 목적지 설정
             # 로봇의 위치에서 일정 거리 떨어진 곳에서 랜덤 생성
             sign = 1 if np.random.random() > 0.5 else -1  # 장애물의 위치와 목적지 위치를 서로 반대 방향에 설정하기 위함
+            sign2 = 1 if np.random.random() > 0.5 else -1 # 일정 확률로 대각선 방향으로 이동하도록
             while True:
                 # 맵의 중심을 (0,0)으로 기준 잡았을 경우
                 obstacle_px = np.random.random() * (self.square_width * 0.5) * sign
@@ -255,10 +325,11 @@ class Environment(object):
                     dy_obstacle.py = obstacle_py
                     break
 
+            # 장애물의 목적지는 맵을 4등분 하였을때 소환위치의 다른 영역을 향하도록 설정
             while True:
                 # 맵의 중심을 (0,0)으로 기준 잡았을 경우
                 obstacle_gx = np.random.random() * (self.square_width * 0.5) * -sign
-                obstacle_gy = (np.random.random() - 0.5) * self.square_height
+                obstacle_gy = (np.random.random() - 0.5) * self.square_height * sign2
 
                 # 장애물의 목적지가 로봇의 목적지와 안전거리 이상 떨어져 있게 목적지 위치 설정
                 if np.linalg.norm((robot_gx - obstacle_gx,
@@ -267,9 +338,9 @@ class Environment(object):
                     dy_obstacle.gy = obstacle_gy
                     break
 
-    def render(self):
+    def render(self, path_info=True):
         # color setting
-        robot_color = 'black'
+        robot_color = 'green'
         static_obstacle_color = 'yellow'
         dynamic_obstacle_color = 'blue'
         goal_color = 'red'
@@ -303,13 +374,25 @@ class Environment(object):
             dy_obstacle_circle_list.append(dy_obstacle_circle)
             ax.add_artist(dy_obstacle_circle)
 
+            # 동적 장애물의 목적지와 목적지 경로 표시
+            if path_info:
+                goal_circle = Circle(dy_obstacle.goal, 0.05, fill=True, color='black')
+                ax.add_artist(goal_circle)
+
+                goal_direction_line = ConnectionPatch(j_th_dy_obstacle_positions[0], dy_obstacle.goal, "data", "data",
+                                                      arrowstyle="-|>", shrinkA=5, shrinkB=5, mutation_scale=20, fc="w")
+                ax.add_artist(goal_direction_line)
+
+
+
         # 정적 장애물 그리기
         for st_obstacle in self.st_obstacles_list:
             if st_obstacle.rectangle:
                 # 사각형 정적 장애물
                 x_for_rect = st_obstacle.px - (st_obstacle.width / 2)
                 y_for_rect = st_obstacle.py - (st_obstacle.height / 2)
-                st_obstacle_rectangle = Rectangle((x_for_rect, y_for_rect), st_obstacle.width, st_obstacle.height, angle=0.0)
+                st_obstacle_rectangle = Rectangle((x_for_rect, y_for_rect), st_obstacle.width, st_obstacle.height,
+                                                  angle=0.0)
                 ax.add_artist(st_obstacle_rectangle)
             else:
                 # 원형 정적 장애물
@@ -334,10 +417,9 @@ class Environment(object):
                     k_th_dy_obst_positions = dy_obstacles_positions[k]
                     dy_obst.center = k_th_dy_obst_positions[frame]
 
-            step_cnt.set_text('Step : {}'.format(frame+1))
+            step_cnt.set_text('Step : {}'.format(frame + 1))
 
         ani = animation.FuncAnimation(fig, animate, frames=len(self.robot_position))
         # print(self.dy_obstacles_positions[0])
 
         plt.show()
-

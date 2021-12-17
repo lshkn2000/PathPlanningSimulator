@@ -7,7 +7,7 @@ from policy.random import Random
 from policy.linear import Linear
 
 
-def run_sim(env, episodes=1, render=True):
+def run_sim(env, episodes=1, max_step_per_episode=50, render=True):
     dt = env.time_step
 
     # 각 로봇, 동적 장애물 행동 취하기
@@ -21,14 +21,14 @@ def run_sim(env, episodes=1, render=True):
 
     for i_episode in range(episodes):
         ob = env.reset(random_position=False, random_goal=False)
-        for t in range(50):
+        for t in range(max_step_per_episode):
             action = env.robot.act(ob)
             next_ob, reward, done, info = env.step(action)
             if done:
                 break
         print("{} episode".format(i_episode + 1))
 
-        env.render()
+        env.render(path_info=False)
 
 
 if __name__ == "__main__":
@@ -37,12 +37,12 @@ if __name__ == "__main__":
     time_limit = 10
 
     # 환경 소환
-    env = Environment(time_step=time_step, time_limit=time_limit)
+    env = Environment(time_step=time_step, time_limit=time_limit, start_rvo2=True)
 
     # 로봇 소환
     robot = Robot()
     robot_init_position = {"px":0, "py":0, "vx":0, "vy":0, "gx":0, "gy":4}
-    robot.set_agent_attribute(px=0, py=0, vx=0, vy=0, gx=0, gy=4, radius=0.3, v_pref=1, time_step=time_step)
+    robot.set_agent_attribute(px=0, py=0, vx=0, vy=0, gx=0, gy=4, radius=0.2, v_pref=1, time_step=time_step)
     # 로봇 정책(행동 규칙) 세팅
     robot_policy = Random()
     robot.set_policy(robot_policy)
@@ -85,6 +85,6 @@ if __name__ == "__main__":
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
 
-    run_sim(env, episodes=5, render=True)
+    run_sim(env, episodes=5, max_step_per_episode=1000, render=True)
 
 
