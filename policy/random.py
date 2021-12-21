@@ -9,9 +9,8 @@ class Random(Policy):
         self.Action = namedtuple('Action', ['vx', 'vy'])
 
     def predict(self, state):
-
-        self.Action.vx = np.random.uniform(-3, 3)
-        self.Action.vy = np.random.uniform(-3, 3)
+        self.Action.vx = np.random.uniform(-1, 1)
+        self.Action.vy = np.random.uniform(-1, 1)
 
         return self.Action
 

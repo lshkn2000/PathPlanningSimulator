@@ -48,7 +48,7 @@ class Environment(object):
         # rvo2 실행
         self.start_rvo2 = start_rvo2
         if self.start_rvo2:
-            self.params = {"neighborDist": 10, "maxNeighbors": 10, "timeHorizon": 5, "timeHorizonObst": 5}
+            self.params = {"neighborDist": 10, "maxNeighbors": 20, "timeHorizon": 5, "timeHorizonObst": 5}
             self.sim = None
 
     def set_robot(self, robot):
@@ -129,8 +129,8 @@ class Environment(object):
                 closest_dist_of_dy_obs = l2_norm
 
             if closest_dist_of_dy_obs - self.robot.radius - dy_obstacle.radius < 0:
-                collision = True
                 # print("collision distance : ", closest_dist_of_dy_obs - self.robot.radius - dy_obstacle.radius)
+                collision = True
                 print("collision!")
                 break
 
@@ -172,6 +172,7 @@ class Environment(object):
                     closest_dist_of_st_obs = l2_norm
 
                 if closest_dist_of_st_obs - self.robot.radius - st_obstacle.radius < 0:
+                    # print("collision distance : ", closest_dist_of_st_obs - self.robot.radius - st_obstacle.radius)
                     collision = True
                     break
 
@@ -264,7 +265,7 @@ class Environment(object):
                   (self.sim.getNumAgents(), self.sim.getNumObstacleVertices()))
 
             check_dy_obstacles_reach_goal = [0] * len(self.dy_obstacles_list)   #rvo2의 목적지 도달 확인용
-            checK_reach_goal_pose = [0] * len(self.dy_obstacles_list)           #rvo2의 목적지 도달 위치 기록용
+            check_reach_goal_pose = [0] * len(self.dy_obstacles_list)           #rvo2의 목적지 도달 위치 기록용
             for step in range(max_steps):
                 self.sim.doStep()
 
@@ -277,12 +278,12 @@ class Environment(object):
                         reach_goal = np.linalg.norm(np.array(rvo2_dy_obstacle_pose) - np.array(dy_obstacle_goal)) < dy_obstacle.radius
 
                         check_dy_obstacles_reach_goal[i] = reach_goal
-                        checK_reach_goal_pose[i] = rvo2_dy_obstacle_pose
+                        check_reach_goal_pose[i] = rvo2_dy_obstacle_pose
 
                     # 목적지 도달하면 그 자리에 멈춤
                     if check_dy_obstacles_reach_goal[i]:
                         self.sim.setAgentVelocity(i, (0, 0))
-                        self.dy_obstacles_positions[i].append(checK_reach_goal_pose[i])
+                        self.dy_obstacles_positions[i].append(check_reach_goal_pose[i])
                     else:
                         self.dy_obstacles_positions[i].append(self.sim.getAgentPosition(i))
 
