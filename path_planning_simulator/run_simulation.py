@@ -28,34 +28,36 @@ def run_sim(env, episodes=1, max_step_per_episode=50, render=True):
             action = env.robot.act(ob)  # action : (vx, vy)
             next_ob, reward, done, info = env.step(action)
 
-            env.robot.policy.store_trajectory(ob, action, reward, next_ob, done)
+            # env.robot.policy.store_trajectory(ob, action, reward, next_ob, done)
             ob = next_ob
 
             score += reward
             if done:
                 break
 
-        if len(env.robot.policy.replay_buffer) > env.robot.policy.replay_buffer.batch_size * 10:
-            env.robot.policy.update_network()
-            print("update")
-
-        if i_episode % interval == 0 and i_episode != 0:
-            env.robot.policy.update_network()
-
-        print("{} episode's reward : {}".format(i_episode + 1, score))
-        score = 0
-
-        if i_episode % 100 == 0 and i_episode !=0:
-            env.render(path_info=True)
+        env.render(path_info=False)
+        # if len(env.robot.policy.replay_buffer) > env.robot.policy.replay_buffer.batch_size * 10:
+        #     env.robot.policy.update_network()
+        #     print("update")
+        #
+        # if i_episode % interval == 0 and i_episode != 0:
+        #     env.robot.policy.update_network()
+        #
+        # print("{} episode's reward : {}".format(i_episode + 1, score))
+        # score = 0
+        #
+        # if i_episode % 100 == 0 and i_episode !=0:
+        #     env.render(path_info=True)
 
 
 if __name__ == "__main__":
+    # 환경 소환
+    env = Environment(start_rvo2=True)
+
     # 환경 변수 설정
     time_step = 0.1
     time_limit = 10
-
-    # 환경 소환
-    env = Environment(time_step=time_step, time_limit=time_limit, start_rvo2=True)
+    env.set_time_step_and_time_limit(time_step, time_limit)
 
     # 로봇 소환
     robot = Robot()
@@ -94,7 +96,8 @@ if __name__ == "__main__":
     # 로봇 정책(행동 규칙) 세팅
     # robot_policy = Random()
     ob_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4) # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
-    robot_policy = DQN(observation_space=ob_space, action_space=5, gamma=0.98, lr=0.0005, K_epoch=5)
+    # robot_policy = DQN(observation_space=ob_space, action_space=5, gamma=0.98, lr=0.0005, K_epoch=5)
+    robot_policy = Random()
     robot.set_policy(robot_policy)
 
     # 환경에 로봇과 장애물 세팅하기
@@ -106,6 +109,6 @@ if __name__ == "__main__":
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
 
-    run_sim(env, episodes=1000, max_step_per_episode=4000, render=True)
+    run_sim(env, episodes=5, max_step_per_episode=4000, render=True)
 
 

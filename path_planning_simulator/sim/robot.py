@@ -1,6 +1,6 @@
 import itertools
 from collections import namedtuple
-from sim.agent import Agent
+from path_planning_simulator.sim.agent import Agent
 
 
 Action = namedtuple('Action', ['vx', 'vy'])

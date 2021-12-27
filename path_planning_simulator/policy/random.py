@@ -1,6 +1,6 @@
 import numpy as np
 from collections import namedtuple
-from policy.policy import Policy
+from path_planning_simulator.policy.policy import Policy
 
 
 class Random(Policy):

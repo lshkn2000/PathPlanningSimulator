@@ -4,11 +4,15 @@ from matplotlib.patches import Circle, Rectangle, ConnectionPatch
 import matplotlib.lines as mlines
 import matplotlib.animation as animation
 import rvo2
+import gym
 
 
-class Environment(object):
-    def __init__(self, time_step, time_limit, start_rvo2=True):
-        '''
+class Environment(gym.Env):
+    metadata = {'render.modes': ['human']}
+
+    def __init__(self, start_rvo2=True):
+
+        """
         환경 맵 세팅(main)
         장애물 배치(main) -> 세팅(Env) : 완료
             동적 장애물은 원
@@ -16,7 +20,10 @@ class Environment(object):
         로봇 배치(main) -> 세팅(Env) : 완료
 
         run sim -> loop 돌면서 스텝 진행
-        '''
+
+        gym wrapping
+        """
+
         # map 크기
         self.square_width = 10
         self.square_height = 10
@@ -25,6 +32,10 @@ class Environment(object):
         self.robot = None
         self.dy_obstacles = []
         self.st_obstacles = []
+
+        # 로봇의 observation space 와 action space 정의
+        self.action_space = None
+        self.observation_space = None
 
         # reset() 할 때 초기 위치 설정
         self.init_position = None
@@ -36,9 +47,9 @@ class Environment(object):
         self.robot_position = None
 
         # 한 에피소드당 스텝 시간 측정용
-        self.time_step = time_step
+        self.time_step = None
         self.global_time = None
-        self.time_limit = time_limit
+        self.time_limit = None
 
         self.step_cnt = 0
 
@@ -50,6 +61,10 @@ class Environment(object):
         if self.start_rvo2:
             self.params = {"neighborDist": 10, "maxNeighbors": 20, "timeHorizon": 5, "timeHorizonObst": 5}
             self.sim = None
+
+    def set_time_step_and_time_limit(self, time_step, time_limit):
+        self.time_step = time_step
+        self.time_limit = time_limit
 
     def set_robot(self, robot):
         self.robot = robot
