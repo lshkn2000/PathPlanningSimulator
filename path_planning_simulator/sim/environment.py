@@ -306,15 +306,16 @@ class Environment(gym.Env):
                         dy_obstacle_goal = dy_obstacle.goal
                         reach_goal = np.linalg.norm(np.array(rvo2_dy_obstacle_pose) - np.array(dy_obstacle_goal)) < dy_obstacle.radius
 
-                        check_dy_obstacles_reach_goal[i] = reach_goal
-                        check_reach_goal_pose[i] = rvo2_dy_obstacle_pose
+                        if reach_goal:
+                            check_dy_obstacles_reach_goal[i] = reach_goal
+                            check_reach_goal_pose[i] = rvo2_dy_obstacle_pose
+
+                        self.dy_obstacles_positions[i].append(rvo2_dy_obstacle_pose)
 
                     # 목적지 도달하면 그 자리에 멈춤
-                    if check_dy_obstacles_reach_goal[i]:
+                    else:
                         self.sim.setAgentVelocity(i, (0, 0))
                         self.dy_obstacles_positions[i].append(check_reach_goal_pose[i])
-                    else:
-                        self.dy_obstacles_positions[i].append(self.sim.getAgentPosition(i))
 
 
         # 로봇과 장애물의 상태 정보 출력

@@ -35,7 +35,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
         episodes_result = []
 
         for i_episode in range(1, max_episodes+1):
-            state = env.reset(random_position=False, random_goal=False)
+            state = env.reset(random_position=False, random_goal=False, max_steps=max_step_per_episode)
             is_terminal = False
             score = 0.0
             time_step_for_ep = 0
@@ -78,27 +78,30 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
                 env.render(path_info=False)
 
         total_seeds_episodes_results.append(episodes_result)
+
         print('####################################')
+        torch.save(env.robot.policy.online_model.state_dict(), 'learning_data/test_20211131.pt')
         print("{} set of simulation done".format(i+1))
         print('####################################')
 
     plot_data(np.array(total_seeds_episodes_results), smooth=100, show=True, save=False)
     print("done!")
 
+
 if __name__ == "__main__":
     # 환경 소환
     env = Environment(start_rvo2=True)
 
     # 환경 변수 설정
-    time_step = 0.1                                 # real time 고려 한 시간 스텝 (s)
-    max_step_per_episode = 10000                    # 시뮬레이션 상에서 에피소드당 최대 스텝 수
-    time_limit = max_step_per_episode * time_step   # 시뮬레이션 스텝을 고려한 real time 제한 소요 시간
+    time_step = 0.1                                         # real time 고려 한 시간 스텝 (s)
+    max_step_per_episode = 10000                            # 시뮬레이션 상에서 에피소드당 최대 스텝 수
+    time_limit = int(max_step_per_episode * time_step)      # 시뮬레이션 스텝을 고려한 real time 제한 소요 시간
     env.set_time_step_and_time_limit(time_step, time_limit)
 
     # 로봇 소환
     discrete_action_space = 8 # continuous action space 이면 None 또는 주석 처리!
     robot = Robot(discrete_action_space=discrete_action_space)
-    # robot_init_position = {"px":0, "py":-4, "vx":0, "vy":0, "gx":0, "gy":4, "radius":0.2}
+    # robot_init_position = {"px":0, "py":-2, "vx":0, "vy":0, "gx":0, "gy":4, "radius":0.2}
     robot.set_agent_attribute(px=0, py=-2, vx=0, vy=0, gx=0, gy=4, radius=0.2, v_pref=1, time_step=time_step)
 
     # 장애물 소환
@@ -118,7 +121,7 @@ if __name__ == "__main__":
         dy_obstacles[i] = dy_obstacle
 
     # 정적 장애물
-    st_obstacle_num = 0
+    st_obstacle_num = 1
     st_obstacles = [None] * st_obstacle_num
     for i in range(st_obstacle_num):
         st_obstacle = StaticObstacle()

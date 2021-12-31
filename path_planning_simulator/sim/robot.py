@@ -37,7 +37,7 @@ class Robot(Agent):
         # action 이 discrete 인가 continuous인가
         # 1. dicrete이라면 0~num(acttion space) 만큼의 인덱스가 출력되므로 이를 discrete 에 맏게 변환해준다.
         if (isinstance(action, int) or isinstance(action, np.int64)) and self.is_discrete_actions:
-            velocity = 1
+            velocity = 2
             vx = velocity * np.cos(self.discrete_rad_angles[action])
             vy = velocity * np.sin(self.discrete_rad_angles[action])
             # self.Action.vx = vx
