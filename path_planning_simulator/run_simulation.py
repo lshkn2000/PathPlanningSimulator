@@ -74,7 +74,8 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
             plot_log_data.add_scalar('Reward for seed {}'.format(i), score, i_episode)     # Tensorboard
 
             # render check
-            # env.render(path_info=False)
+            if render:
+                env.render(path_info=False)
 
         total_seeds_episodes_results.append(episodes_result)
         print('####################################')
@@ -96,8 +97,8 @@ if __name__ == "__main__":
     # 로봇 소환
     discrete_action_space = 8
     robot = Robot(discrete_action_space=discrete_action_space)
-    robot_init_position = {"px":0, "py":0, "vx":0, "vy":0, "gx":0, "gy":4}
-    robot.set_agent_attribute(px=0, py=0, vx=0, vy=0, gx=0, gy=4, radius=0.2, v_pref=1, time_step=time_step)
+    # robot_init_position = {"px":0, "py":-4, "vx":0, "vy":0, "gx":0, "gy":4, "radius":0.2}
+    robot.set_agent_attribute(px=0, py=-2, vx=0, vy=0, gx=0, gy=4, radius=0.2, v_pref=1, time_step=time_step)
 
     # 장애물 소환
     # 동적 장애물
@@ -144,4 +145,4 @@ if __name__ == "__main__":
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
 
-    run_sim(env, max_episodes=10, max_step_per_episode=4000, render=True, seed_num=3, n_warmup_batches=5, update_target_every_steps=1)
+    run_sim(env, max_episodes=10000, max_step_per_episode=10000, render=False, seed_num=3, n_warmup_batches=5, update_target_every_steps=1)
