@@ -90,19 +90,20 @@ if __name__ == "__main__":
     env = Environment(start_rvo2=True)
 
     # 환경 변수 설정
-    time_step = 0.1
-    time_limit = 10
+    time_step = 0.1                                 # real time 고려 한 시간 스텝 (s)
+    max_step_per_episode = 10000                    # 시뮬레이션 상에서 에피소드당 최대 스텝 수
+    time_limit = max_step_per_episode * time_step   # 시뮬레이션 스텝을 고려한 real time 제한 소요 시간
     env.set_time_step_and_time_limit(time_step, time_limit)
 
     # 로봇 소환
-    discrete_action_space = 8
+    discrete_action_space = 8 # continuous action space 이면 None 또는 주석 처리!
     robot = Robot(discrete_action_space=discrete_action_space)
     # robot_init_position = {"px":0, "py":-4, "vx":0, "vy":0, "gx":0, "gy":4, "radius":0.2}
     robot.set_agent_attribute(px=0, py=-2, vx=0, vy=0, gx=0, gy=4, radius=0.2, v_pref=1, time_step=time_step)
 
     # 장애물 소환
     # 동적 장애물
-    dy_obstacle_num = 20
+    dy_obstacle_num = 10
     dy_obstacles = [None] * dy_obstacle_num
     for i in range(dy_obstacle_num):
         dy_obstacle = DynamicObstacle()
@@ -117,7 +118,7 @@ if __name__ == "__main__":
         dy_obstacles[i] = dy_obstacle
 
     # 정적 장애물
-    st_obstacle_num = 1
+    st_obstacle_num = 0
     st_obstacles = [None] * st_obstacle_num
     for i in range(st_obstacle_num):
         st_obstacle = StaticObstacle()
@@ -145,4 +146,4 @@ if __name__ == "__main__":
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
 
-    run_sim(env, max_episodes=10000, max_step_per_episode=10000, render=False, seed_num=3, n_warmup_batches=5, update_target_every_steps=1)
+    run_sim(env, max_episodes=10000, max_step_per_episode=max_step_per_episode, render=True, seed_num=3, n_warmup_batches=5, update_target_every_steps=1)

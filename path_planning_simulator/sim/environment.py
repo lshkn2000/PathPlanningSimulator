@@ -208,6 +208,9 @@ class Environment(gym.Env):
             done = True
             info = None
         else:
+            # goal_dx = self.robot.px - self.robot.gx
+            # goal_dy = self.robot.py - self.robot.gy
+            # dist_goal = pow((pow(goal_dx, 2) + pow(goal_dy, 2)), 0.5)
             reward = 0
             done = False
             info = None
