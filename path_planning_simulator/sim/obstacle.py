@@ -1,7 +1,6 @@
+from collections import deque
 from collections import namedtuple
 from path_planning_simulator.sim.agent import Agent
-
-Action = namedtuple('Action', ['vx', 'vy'])
 
 
 class DynamicObstacle(Agent):
@@ -38,7 +37,7 @@ class StaticObstacle(Agent):
         self.height = None
 
     def act(self, ob):
-        action = Action(vx=0, vy=0)
+        action = deque([0,0], maxlen=2)
         return action
 
     def set_rectangle(self, width, height):

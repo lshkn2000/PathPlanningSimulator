@@ -1,3 +1,4 @@
+import itertools
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.patches import Circle, Rectangle, ConnectionPatch
@@ -32,10 +33,6 @@ class Environment(gym.Env):
         self.robot = None
         self.dy_obstacles = []
         self.st_obstacles = []
-
-        # 로봇의 observation space 와 action space 정의
-        self.action_space = None
-        self.observation_space = None
 
         # reset() 할 때 초기 위치 설정
         self.init_position = None
@@ -221,7 +218,21 @@ class Environment(gym.Env):
         next_st_obstacle_ob = [st_obstacle.self_state_wo_goal_rectangle for st_obstacle in self.st_obstacles]
         next_ob = [next_robot_ob] + [next_dy_obstacle_ob] + [next_st_obstacle_ob]
 
-        return next_ob, reward, done, info
+        next_state = list(itertools.chain(*next_ob))
+        next_state_flatten = []  # 내부 튜플 제거...
+        for item in next_state:
+            if isinstance(item, tuple):
+                if len(item) != 0:
+                    for x in item:
+                        next_state_flatten.append(x)
+                else:
+                    pass
+            else:
+                next_state_flatten.append(item)
+
+        next_state = next_state_flatten
+
+        return np.array(next_state), reward, done, info
 
     def reset(self, random_position=False, random_goal=False, max_steps=1000):
         # 에피소드 실행 시간 초기화
@@ -309,7 +320,21 @@ class Environment(gym.Env):
         st_obstacle_ob = [st_obstacle.self_state_wo_goal_rectangle for st_obstacle in self.st_obstacles]
         ob = [robot_ob] + [dy_obstacle_ob] + [st_obstacle_ob]
 
-        return ob
+        state = list(itertools.chain(*ob))
+        state_flatten = []  # 내부 튜플 제거...
+        for item in state:
+            if isinstance(item, tuple):
+                if len(item) != 0:
+                    for x in item:
+                        state_flatten.append(x)
+                else:
+                    pass
+            else:
+                state_flatten.append(item)
+
+        state = state_flatten
+
+        return np.array(state)
 
     def generate_random_position(self):
         '''

@@ -1,54 +1,88 @@
 # from IPython.display import clear_output
 # %matplotlib notebook
+import random
+
+import torch
+import numpy as np
+import gc
+from torch.utils.tensorboard import SummaryWriter
+
 from sim.environment import Environment
 from sim.robot import Robot
 from sim.obstacle import DynamicObstacle, StaticObstacle
 from policy.random import Random
 from policy.linear import Linear
 from policy.dqn import DQN
+from utils.plot_graph import plot_data
 
 
-def run_sim(env, episodes=1, max_step_per_episode=50, render=True):
+def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=1, n_warmup_batches=5, update_target_every_steps=1, **kwargs):
+    SEED = [random.randint(1, 100) for _ in range(seed_num)]
     dt = env.time_step
 
     # 각 로봇, 동적 장애물 행동 취하기
     # 에피소드 실행
-    # env.reset(random_position=False, random_goal=False)
-    # action =
-    # ob, reward, done, info = step(action)
-
     print(env.robot.info)
     print(env.dy_obstacles[0].info)
 
-    interval = 20
-    score = 0
-    for i_episode in range(episodes):
-        ob = env.reset(random_position=False, random_goal=False)
-        for t in range(max_step_per_episode):
-            action = env.robot.act(ob)  # action : (vx, vy)
-            next_ob, reward, done, info = env.step(action)
+    total_seeds_episodes_results = []
+    plot_log_data = SummaryWriter()
+    for i, seed in enumerate(SEED):
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
 
-            # env.robot.policy.store_trajectory(ob, action, reward, next_ob, done)
-            ob = next_ob
+        episodes_result = []
 
-            score += reward
-            if done:
-                break
+        for i_episode in range(1, max_episodes+1):
+            state = env.reset(random_position=False, random_goal=False)
+            is_terminal = False
+            score = 0.0
+            time_step_for_ep = 0
 
-        env.render(path_info=False)
-        # if len(env.robot.policy.replay_buffer) > env.robot.policy.replay_buffer.batch_size * 10:
-        #     env.robot.policy.update_network()
-        #     print("update")
-        #
-        # if i_episode % interval == 0 and i_episode != 0:
-        #     env.robot.policy.update_network()
-        #
-        # print("{} episode's reward : {}".format(i_episode + 1, score))
-        # score = 0
-        #
-        # if i_episode % 100 == 0 and i_episode !=0:
-        #     env.render(path_info=True)
+            n_warmup_batches = n_warmup_batches
+            update_target_every_steps = update_target_every_steps # 1 for DDPG
 
+            for t in range(max_step_per_episode):
+                action, discrete_action_index = env.robot.act(state)  # action : (vx, vy)
+                new_state, reward, is_terminal, info = env.step(action)
+                if env.robot.is_discrete_actions:
+                    env.robot.policy.store_trajectory(state, discrete_action_index, reward, new_state, is_terminal)
+                else:
+                    env.robot.policy.store_trajectory(state, action, reward, new_state, is_terminal)
+
+                state = new_state
+                time_step_for_ep += 1
+                score += reward
+
+                min_samples = env.robot.policy.replay_buffer.batch_size * n_warmup_batches
+                if len(env.robot.policy.replay_buffer) > min_samples:
+                    env.robot.policy.train()
+                    # policy.train(time_step_for_ep) # for TD3
+
+                if time_step_for_ep % update_target_every_steps == 0:
+                    env.robot.policy.update_network()
+                    # policy.update_network(time_step_for_ep, update_target_policy_every_steps=2, update_target_value_every_steps=2) # for TD3
+
+                if is_terminal:
+                    print("{} episode, {} steps, {} score".format(i_episode, time_step_for_ep, score))
+                    gc.collect()
+                    break
+
+            # stat
+            episodes_result.append(score)
+            plot_log_data.add_scalar('Reward for seed {}'.format(i), score, i_episode)     # Tensorboard
+
+            # render check
+            # env.render(path_info=False)
+
+        total_seeds_episodes_results.append(episodes_result)
+        print('####################################')
+        print("{} set of simulation done".format(i+1))
+        print('####################################')
+
+    plot_data(np.array(total_seeds_episodes_results), smooth=100, show=True, save=False)
+    print("done!")
 
 if __name__ == "__main__":
     # 환경 소환
@@ -60,7 +94,8 @@ if __name__ == "__main__":
     env.set_time_step_and_time_limit(time_step, time_limit)
 
     # 로봇 소환
-    robot = Robot()
+    discrete_action_space = 8
+    robot = Robot(discrete_action_space=discrete_action_space)
     robot_init_position = {"px":0, "py":0, "vx":0, "vy":0, "gx":0, "gy":4}
     robot.set_agent_attribute(px=0, py=0, vx=0, vy=0, gx=0, gy=4, radius=0.2, v_pref=1, time_step=time_step)
 
@@ -94,10 +129,10 @@ if __name__ == "__main__":
         st_obstacles[i] = st_obstacle
 
     # 로봇 정책(행동 규칙) 세팅
+    observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4) # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
+    action_space = discrete_action_space    # 상,하,좌,우, 대각선 방향 총 8가지
+    robot_policy = DQN(observation_space, action_space, gamma=0.98, lr=0.0005)
     # robot_policy = Random()
-    ob_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4) # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
-    # robot_policy = DQN(observation_space=ob_space, action_space=5, gamma=0.98, lr=0.0005, K_epoch=5)
-    robot_policy = Random()
     robot.set_policy(robot_policy)
 
     # 환경에 로봇과 장애물 세팅하기
@@ -109,6 +144,4 @@ if __name__ == "__main__":
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
 
-    run_sim(env, episodes=5, max_step_per_episode=4000, render=True)
-
-
+    run_sim(env, max_episodes=10, max_step_per_episode=4000, render=True, seed_num=3, n_warmup_batches=5, update_target_every_steps=1)

@@ -1,3 +1,4 @@
+from collections import deque
 from collections import namedtuple
 from path_planning_simulator.policy.policy import Policy
 
@@ -9,7 +10,8 @@ class Linear(Policy):
     '''
     def __init__(self, velocity=1):
         super(Linear, self).__init__()
-        self.Action = namedtuple('Action', ['vx', 'vy'])
+        # self.Action = namedtuple('Action', ['vx', 'vy'])
+        self.action = deque([None, None], maxlen=2)
         self.velocity = velocity
         self.threshold = 0.1
 
@@ -35,8 +37,11 @@ class Linear(Policy):
             velocity = self.velocity
 
         # 목적지 방향으로 속도를 설정
-        self.Action.vx = norm_dir_x * velocity
-        self.Action.vy = norm_dir_y * velocity
+        # self.Action.vx = norm_dir_x * velocity
+        # self.Action.vy = norm_dir_y * velocity
 
-        return self.Action
+        self.action[0] = norm_dir_x * velocity
+        self.action[1] = norm_dir_y * velocity
+
+        return self.action
 

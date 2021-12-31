@@ -1,5 +1,6 @@
 import abc
 
+
 class Agent(object):
     def __init__(self):
         self.name = None
@@ -75,14 +76,18 @@ class Agent(object):
         return
 
     def step(self, action):
-        px = self.px + action.vx * self.time_step
-        py = self.py + action.vy * self.time_step
+        # px = self.px + action.vx * self.time_step
+        # py = self.py + action.vy * self.time_step
+        px = self.px + action[0] * self.time_step
+        py = self.py + action[1] * self.time_step
 
         self.px = px
         self.py = py
 
-        self.vx = action.vx
-        self.vy = action.vy
+        # self.vx = action.vx
+        # self.vy = action.vy
+        self.vx = action[0]
+        self.vy = action[1]
 
     def reach_goal(self):
         px, py = self.position
