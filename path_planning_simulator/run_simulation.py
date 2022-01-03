@@ -3,6 +3,7 @@
 import random
 import time
 import datetime
+import pickle
 
 import torch
 import numpy as np
@@ -71,13 +72,16 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
                     # policy.update_network(time_step_for_ep, update_target_policy_every_steps=2, update_target_value_every_steps=2) # for TD3
 
                 if is_terminal:
-                    print("{} seeds {} episode, {} steps, {} score".format(i_seed+1, i_episode, time_step_for_ep, score))
+                    print("{} seeds {} episode, {} steps, {} reward".format(i_seed+1, i_episode, time_step_for_ep, score))
                     gc.collect()
                     break
 
             # stat
             episodes_result.append(score)
-            plot_log_data.add_scalar('Reward for seed {}'.format(i_seed), score, i_episode)     # Tensorboard
+            # plot_log_data.add_scalar('Reward for seed {}'.format(i_seed), score, i_episode)     # Tensorboard
+            if i_episode % 500 == 0 and i_episode != 0:
+                with open('temp_rewards.pickle', 'wb') as f:
+                    pickle.dump(episodes_result, f, pickle.HIGHEST_PROTOCOL)
 
             # render check
             if render:
@@ -104,9 +108,9 @@ if __name__ == "__main__":
     time_step = 0.1                                         # real time 고려 한 시간 스텝 (s)
     max_step_per_episode = 5000                             # 시뮬레이션 상에서 에피소드당 최대 스텝 수
     time_limit = max_step_per_episode                       # 시뮬레이션 스텝을 고려한 real time 제한 소요 시간
-    max_episodes = 5000
+    max_episodes = 10000
     env.set_time_step_and_time_limit(time_step, time_limit)
-    seed_num = 3
+    seed_num = 2
 
     # 로봇 소환
     discrete_action_space = 8 # continuous action space 이면 None 또는 주석 처리!

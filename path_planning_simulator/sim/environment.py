@@ -44,14 +44,20 @@ class Environment(gym.Env):
         self.robot_position = None
 
         # 한 에피소드당 스텝 시간 측정용
-        self.time_step = None       # RVO2 의 step 시간 단위
+        self.time_step = None  # RVO2 의 step 시간 단위
         self.global_time = None
         self.time_limit = None
 
         self.step_cnt = 0
 
         # 충돌 거리 설정
-        self.safe_distance = 1.0 # 로봇과 장애물이 소환되는 위치의 거리를 세팅
+        self.safe_distance = 1.0  # 로봇과 장애물이 소환되는 위치의 거리를 세팅
+
+        # 상태 정보 설계용
+        self.scailing_factor = 5
+
+        # 보상함수 설계용
+        self.target_norm = None
 
         # rvo2 실행
         self.start_rvo2 = start_rvo2
@@ -195,22 +201,35 @@ class Environment(gym.Env):
         '''
         조건 : time, collision, reach_goal 
         '''
+        # 0 time reward
+        reward = -0.1
+
+        # 1. reward for distance
+        target_distance_vector = (self.robot.position[0] - self.robot.goal[0], self.robot.position[1] - self.robot.goal[1])
+        target_norm = np.linalg.norm(target_distance_vector)
+
+        if self.target_norm is None:
+            self.target_norm = target_norm
+
+        delta_reward = lambda x: np.tanh(0.9 * x) if x > 0 else np.tanh(x)
+
+        reward += delta_reward(self.target_norm - target_norm)
+
+        self.target_norm = target_norm
+
         if reach_goal:
-            reward = 1
+            reward += 10
             done = True
             info = None
         elif collision:
-            reward = -1
+            reward += -10
             done = True
             info = None
         elif self.global_time >= self.time_limit - 1:
-            reward = -1
+            reward += -10
             done = True
             info = None
         else:
-            # goal_dx = self.robot.px - self.robot.gx
-            # goal_dy = self.robot.py - self.robot.gy
-            # dist_goal = pow((pow(goal_dx, 2) + pow(goal_dy, 2)), 0.5)
             reward = 0
             done = False
             info = None
@@ -235,7 +254,7 @@ class Environment(gym.Env):
 
         next_state = next_state_flatten
 
-        return np.array(next_state), reward, done, info
+        return np.array(next_state) / self.scailing_factor, reward, done, info
 
     def reset(self, random_position=False, random_goal=False, max_steps=1000):
         # 에피소드 실행 시간 초기화
@@ -281,11 +300,14 @@ class Environment(gym.Env):
 
             for i, dy_obstacle in enumerate(self.dy_obstacles_list):
                 # 장애물 정보 추가
-                agent = self.sim.addAgent(dy_obstacle.position, self.params['neighborDist'], self.params['maxNeighbors'],
-                                          self.params['timeHorizon'], self.params['timeHorizonObst'], dy_obstacle.radius,
+                agent = self.sim.addAgent(dy_obstacle.position, self.params['neighborDist'],
+                                          self.params['maxNeighbors'],
+                                          self.params['timeHorizon'], self.params['timeHorizonObst'],
+                                          dy_obstacle.radius,
                                           dy_obstacle.v_pref, dy_obstacle.velocity)
 
-                pref_velocity = dy_obstacle.goal[0] - dy_obstacle.position[0], dy_obstacle.goal[1] - dy_obstacle.position[1]
+                pref_velocity = dy_obstacle.goal[0] - dy_obstacle.position[0], dy_obstacle.goal[1] - \
+                                dy_obstacle.position[1]
                 if np.linalg.norm(pref_velocity) > 1:
                     pref_velocity /= np.linalg.norm(pref_velocity)
                 self.sim.setAgentPrefVelocity(agent, tuple(pref_velocity))
@@ -293,8 +315,8 @@ class Environment(gym.Env):
             print('Simulation has %i agents and %i obstacle vertices in it.' %
                   (self.sim.getNumAgents(), self.sim.getNumObstacleVertices()))
 
-            check_dy_obstacles_reach_goal = [0] * len(self.dy_obstacles_list)   #rvo2의 목적지 도달 확인용
-            check_reach_goal_pose = [0] * len(self.dy_obstacles_list)           #rvo2의 목적지 도달 위치 기록용
+            check_dy_obstacles_reach_goal = [0] * len(self.dy_obstacles_list)  # rvo2의 목적지 도달 확인용
+            check_reach_goal_pose = [0] * len(self.dy_obstacles_list)  # rvo2의 목적지 도달 위치 기록용
             for step in range(max_steps):
                 self.sim.doStep()
 
@@ -304,7 +326,8 @@ class Environment(gym.Env):
                         # 목적지 도달 체크
                         rvo2_dy_obstacle_pose = self.sim.getAgentPosition(i)
                         dy_obstacle_goal = dy_obstacle.goal
-                        reach_goal = np.linalg.norm(np.array(rvo2_dy_obstacle_pose) - np.array(dy_obstacle_goal)) < dy_obstacle.radius
+                        reach_goal = np.linalg.norm(
+                            np.array(rvo2_dy_obstacle_pose) - np.array(dy_obstacle_goal)) < dy_obstacle.radius
 
                         if reach_goal:
                             check_dy_obstacles_reach_goal[i] = reach_goal
@@ -316,7 +339,6 @@ class Environment(gym.Env):
                     else:
                         self.sim.setAgentVelocity(i, (0, 0))
                         self.dy_obstacles_positions[i].append(check_reach_goal_pose[i])
-
 
         # 로봇과 장애물의 상태 정보 출력
         robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_goal]
@@ -338,7 +360,7 @@ class Environment(gym.Env):
 
         state = state_flatten
 
-        return np.array(state)
+        return np.array(state) / self.scailing_factor
 
     def generate_random_position(self):
         '''
@@ -357,7 +379,7 @@ class Environment(gym.Env):
             # 장애물 위치 변경 및 목적지 설정
             # 로봇의 위치에서 일정 거리 떨어진 곳에서 랜덤 생성
             sign = 1 if np.random.random() > 0.5 else -1  # 장애물의 위치와 목적지 위치를 서로 반대 방향에 설정하기 위함
-            sign2 = 1 if np.random.random() > 0.5 else -1 # 일정 확률로 대각선 방향으로 이동하도록
+            sign2 = 1 if np.random.random() > 0.5 else -1  # 일정 확률로 대각선 방향으로 이동하도록
             while True:
                 # 맵의 중심을 (0,0)으로 기준 잡았을 경우
                 obstacle_px = np.random.random() * (self.square_width * 0.5) * sign
@@ -427,8 +449,6 @@ class Environment(gym.Env):
                 goal_direction_line = ConnectionPatch(j_th_dy_obstacle_positions[0], dy_obstacle.goal, "data", "data",
                                                       arrowstyle="-|>", shrinkA=5, shrinkB=5, mutation_scale=20, fc="w")
                 ax.add_artist(goal_direction_line)
-
-
 
         # 정적 장애물 그리기
         for st_obstacle in self.st_obstacles_list:
