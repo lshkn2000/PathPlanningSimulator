@@ -1,6 +1,8 @@
 # from IPython.display import clear_output
 # %matplotlib notebook
 import random
+import time
+import datetime
 
 import torch
 import numpy as np
@@ -17,6 +19,10 @@ from utils.plot_graph import plot_data
 
 
 def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=1, n_warmup_batches=5, update_target_every_steps=1, **kwargs):
+    # simulation start
+    start_time = time.time()
+    timestr = time.strftime("%Y%m%d_%H%M%S")    # 학습 데이터 저장용
+
     SEED = [random.randint(1, 100) for _ in range(seed_num)]
     dt = env.time_step
 
@@ -27,7 +33,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
     total_seeds_episodes_results = []
     plot_log_data = SummaryWriter()
-    for i, seed in enumerate(SEED):
+    for i_seed, seed in enumerate(SEED):
         torch.manual_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
@@ -65,13 +71,13 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
                     # policy.update_network(time_step_for_ep, update_target_policy_every_steps=2, update_target_value_every_steps=2) # for TD3
 
                 if is_terminal:
-                    print("{} episode, {} steps, {} score".format(i_episode, time_step_for_ep, score))
+                    print("{} seeds {} episode, {} steps, {} score".format(i_seed+1, i_episode, time_step_for_ep, score))
                     gc.collect()
                     break
 
             # stat
             episodes_result.append(score)
-            plot_log_data.add_scalar('Reward for seed {}'.format(i), score, i_episode)     # Tensorboard
+            plot_log_data.add_scalar('Reward for seed {}'.format(i_seed), score, i_episode)     # Tensorboard
 
             # render check
             if render:
@@ -80,11 +86,13 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
         total_seeds_episodes_results.append(episodes_result)
 
         print('####################################')
-        torch.save(env.robot.policy.online_model.state_dict(), 'learning_data/test_20211131.pt')
+        torch.save(env.robot.policy.online_model.state_dict(), 'learning_data/test_'+timestr+'.pt')
         print("{} set of simulation done".format(i+1))
         print('####################################')
 
-    plot_data(np.array(total_seeds_episodes_results), smooth=100, show=True, save=False)
+    plot_data(np.array(total_seeds_episodes_results), smooth=100, show=True, save=True)
+    end_time = time.time() - start_time
+    print("simulation operating time : {}".format(str(datetime.timedelta(seconds=end_time))))
     print("done!")
 
 
@@ -94,9 +102,11 @@ if __name__ == "__main__":
 
     # 환경 변수 설정
     time_step = 0.1                                         # real time 고려 한 시간 스텝 (s)
-    max_step_per_episode = 10000                            # 시뮬레이션 상에서 에피소드당 최대 스텝 수
-    time_limit = int(max_step_per_episode * time_step)      # 시뮬레이션 스텝을 고려한 real time 제한 소요 시간
+    max_step_per_episode = 5000                             # 시뮬레이션 상에서 에피소드당 최대 스텝 수
+    time_limit = max_step_per_episode                       # 시뮬레이션 스텝을 고려한 real time 제한 소요 시간
+    max_episodes = 5000
     env.set_time_step_and_time_limit(time_step, time_limit)
+    seed_num = 3
 
     # 로봇 소환
     discrete_action_space = 8 # continuous action space 이면 None 또는 주석 처리!
@@ -149,4 +159,4 @@ if __name__ == "__main__":
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
 
-    run_sim(env, max_episodes=10000, max_step_per_episode=max_step_per_episode, render=True, seed_num=3, n_warmup_batches=5, update_target_every_steps=1)
+    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=False, seed_num=seed_num, n_warmup_batches=5, update_target_every_steps=10)

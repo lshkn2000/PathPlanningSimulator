@@ -44,7 +44,7 @@ class Environment(gym.Env):
         self.robot_position = None
 
         # 한 에피소드당 스텝 시간 측정용
-        self.time_step = None
+        self.time_step = None       # RVO2 의 step 시간 단위
         self.global_time = None
         self.time_limit = None
 
@@ -116,7 +116,7 @@ class Environment(gym.Env):
                 # 장애물의 위치 정보 저장
                 self.dy_obstacles_positions[i].append(self.dy_obstacles[i].position)
 
-        self.global_time += self.time_step
+        self.global_time += 1
         self.step_cnt += 1
 
         # collision check btw robot and dynamic obstacle

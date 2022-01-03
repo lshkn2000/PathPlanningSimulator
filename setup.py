@@ -11,4 +11,5 @@ setup(name='PathPlanningSimulator',
                         'torch',
                         'matplotlib',
                         'numpy',
-                        'scipy'])
+                        'scipy',
+                        'tensorboard'])
