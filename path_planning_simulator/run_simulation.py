@@ -16,10 +16,11 @@ from sim.obstacle import DynamicObstacle, StaticObstacle
 from policy.random import Random
 from policy.linear import Linear
 from policy.dqn import DQN
+from policy.sac import SAC
 from utils.plot_graph import plot_data
 
 
-def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=1, n_warmup_batches=5, update_target_every_steps=1, **kwargs):
+def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=1, n_warmup_batches=5, update_target_interval=1, **kwargs):
     # simulation start
     start_time = time.time()
     timestr = time.strftime("%Y%m%d_%H%M%S")    # 학습 데이터 저장용
@@ -48,7 +49,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
             time_step_for_ep = 0
 
             n_warmup_batches = n_warmup_batches
-            update_target_every_steps = update_target_every_steps # 1 for DDPG
+            update_target_interval = update_target_interval # 1 for DDPG
 
             for t in range(max_step_per_episode):
                 action, discrete_action_index = env.robot.act(state)  # action : (vx, vy)
@@ -67,7 +68,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
                     env.robot.policy.train()
                     # policy.train(time_step_for_ep) # for TD3
 
-                if time_step_for_ep % update_target_every_steps == 0:
+                if time_step_for_ep % update_target_interval == 0:
                     env.robot.policy.update_network()
                     # policy.update_network(time_step_for_ep, update_target_policy_every_steps=2, update_target_value_every_steps=2) # for TD3
 
@@ -84,8 +85,8 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
                     pickle.dump(episodes_result, f, pickle.HIGHEST_PROTOCOL)
 
             # render check
-            if render:
-                env.render(path_info=False)
+            if render and i_episode % 10 == 0 and i_episode != 0:
+                env.render(path_info=True)
 
         total_seeds_episodes_results.append(episodes_result)
 
@@ -106,20 +107,22 @@ if __name__ == "__main__":
 
     # 환경 변수 설정
     time_step = 0.1                                         # real time 고려 한 시간 스텝 (s)
-    max_step_per_episode = 5000                             # 시뮬레이션 상에서 에피소드당 최대 스텝 수
+    max_step_per_episode = 500                             # 시뮬레이션 상에서 에피소드당 최대 스텝 수
     time_limit = max_step_per_episode                       # 시뮬레이션 스텝을 고려한 real time 제한 소요 시간
-    max_episodes = 10000
+    max_episodes = 1000
     env.set_time_step_and_time_limit(time_step, time_limit)
     seed_num = 2
 
     # 로봇 소환
-    discrete_action_space = 8 # continuous action space 이면 None 또는 주석 처리!
-    robot = Robot(discrete_action_space=discrete_action_space)
+    # 1. 행동이 이산적인지 연속적인지 선택
+    # 2. 로봇 초기화
+    is_discrete_action_space = None # continuous action space 이면 None
+    robot = Robot(discrete_action_space=is_discrete_action_space)
     # robot_init_position = {"px":0, "py":-2, "vx":0, "vy":0, "gx":0, "gy":4, "radius":0.2}
     robot.set_agent_attribute(px=0, py=-2, vx=0, vy=0, gx=0, gy=4, radius=0.2, v_pref=1, time_step=time_step)
 
     # 장애물 소환
-    # 동적 장애물
+    # 3. 동적 장애물
     dy_obstacle_num = 10
     dy_obstacles = [None] * dy_obstacle_num
     for i in range(dy_obstacle_num):
@@ -134,8 +137,8 @@ if __name__ == "__main__":
 
         dy_obstacles[i] = dy_obstacle
 
-    # 정적 장애물
-    st_obstacle_num = 1
+    # 4. 정적 장애물
+    st_obstacle_num = 0
     st_obstacles = [None] * st_obstacle_num
     for i in range(st_obstacle_num):
         st_obstacle = StaticObstacle()
@@ -147,10 +150,12 @@ if __name__ == "__main__":
 
         st_obstacles[i] = st_obstacle
 
-    # 로봇 정책(행동 규칙) 세팅
+    # 5. 로봇 정책(행동 규칙) 세팅
     observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4) # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
-    action_space = discrete_action_space    # 상,하,좌,우, 대각선 방향 총 8가지
-    robot_policy = DQN(observation_space, action_space, gamma=0.98, lr=0.0005)
+    # 로봇의 action space 설정
+    action_space = 2    # 이산적이라면 상,하,좌,우, 대각선 방향 총 8가지
+    # robot_policy = DQN(observation_space, action_space, gamma=0.98, lr=0.0005)
+    robot_policy = SAC(observation_space, action_space, action_space_low=[-1, -1], action_space_high=[1, 1], gamma=0.99, policy_optimizer_lr=0.0005, value_optimizer_lr=0.0007, tau=0.005)
     # robot_policy = Random()
     robot.set_policy(robot_policy)
 
@@ -163,4 +168,4 @@ if __name__ == "__main__":
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
 
-    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=False, seed_num=seed_num, n_warmup_batches=5, update_target_every_steps=10)
+    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=True, seed_num=seed_num, n_warmup_batches=5, update_target_interval=10)

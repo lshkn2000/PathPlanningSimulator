@@ -6,6 +6,7 @@ import matplotlib.lines as mlines
 import matplotlib.animation as animation
 import rvo2
 import gym
+import time
 
 
 class Environment(gym.Env):
@@ -218,15 +219,15 @@ class Environment(gym.Env):
         self.target_norm = target_norm
 
         if reach_goal:
-            reward += 10
+            reward += 5
             done = True
             info = None
         elif collision:
-            reward += -10
+            reward += -5
             done = True
             info = None
         elif self.global_time >= self.time_limit - 1:
-            reward += -10
+            reward += -5
             done = True
             info = None
         else:
@@ -468,23 +469,23 @@ class Environment(gym.Env):
         dy_obstacles_positions = self.dy_obstacles_positions
 
         def animate(frame):
-            if frame == len(self.robot_position) - 1:
-
-                print('steps done. closing!')
-                # plt.ion()
-                # plt.close(fig)
-
-            else:
-                # 로봇의 위치 기록을 기반으로 움직이기
-                robot_circle.center = self.robot_position[frame]
-                # 동적 장애물 위치 기록을 기반으로 움직이기
-                for k, dy_obst in enumerate(dy_obstacle_circle_list):
-                    k_th_dy_obst_positions = dy_obstacles_positions[k]
-                    dy_obst.center = k_th_dy_obst_positions[frame]
+            # if frame == len(self.robot_position) - 1:
+            #
+            #     print('steps done. closing!')
+            #     # plt.ion()
+            #     # plt.close(fig)
+            #
+            # else:
+            # 로봇의 위치 기록을 기반으로 움직이기
+            robot_circle.center = self.robot_position[frame]
+            # 동적 장애물 위치 기록을 기반으로 움직이기
+            for k, dy_obst in enumerate(dy_obstacle_circle_list):
+                k_th_dy_obst_positions = dy_obstacles_positions[k]
+                dy_obst.center = k_th_dy_obst_positions[frame]
 
             step_cnt.set_text('Step : {}'.format(frame + 1))
 
-        ani = animation.FuncAnimation(fig, animate, frames=len(self.robot_position))
-        # print(self.dy_obstacles_positions[0])
-
-        plt.show()
+        f = r"./learning_data/video/"
+        timestr = time.strftime("%m%d%H%M")
+        ani = animation.FuncAnimation(fig, animate, frames=len(self.robot_position), repeat=False)
+        ani.save(f + timestr + ".gif", writer='imagemagick', fps=30)

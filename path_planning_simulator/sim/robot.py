@@ -53,9 +53,9 @@ class Robot(Agent):
             # self.Action.vy = action[1]
             self.action[0] = action[0]
             self.action[1] = action[1]
+
+            return self.action, None
         else:
             print("action : ", action)
             print("action type : {}".format(type(action)))
             raise Exception("action의 형태를 확인하세요.")
-
-            return self.action, None
