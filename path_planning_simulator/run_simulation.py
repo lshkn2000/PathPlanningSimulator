@@ -79,10 +79,14 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
             # stat
             episodes_result.append(score)
-            # plot_log_data.add_scalar('Reward for seed {}'.format(i_seed), score, i_episode)     # Tensorboard
-            if i_episode % 500 == 0 and i_episode != 0:
-                with open('temp_rewards.pickle', 'wb') as f:
-                    pickle.dump(episodes_result, f, pickle.HIGHEST_PROTOCOL)
+
+            # log learning weights
+            if i_episode % 100 == 0 and i_episode != 0:
+                plot_log_data.add_scalar('Reward for seed {}'.format(i_seed), score, i_episode)     # Tensorboard
+
+            # save learning weights
+            if i_episode % 1 == 0 and i_episode != 0:
+                env.robot.policy.save("learning_data/sac_tmp")
 
             # render check
             if render and i_episode % 10 == 0 and i_episode != 0:
@@ -91,12 +95,13 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
         total_seeds_episodes_results.append(episodes_result)
 
         print('####################################')
-        torch.save(env.robot.policy.online_model.state_dict(), 'learning_data/test_'+timestr+'.pt')
+        env.robot.policy.save("learning_data/sac_total")
         print("{} set of simulation done".format(i+1))
         print('####################################')
 
     plot_data(np.array(total_seeds_episodes_results), smooth=100, show=True, save=True)
     end_time = time.time() - start_time
+    plot_log_data.close()
     print("simulation operating time : {}".format(str(datetime.timedelta(seconds=end_time))))
     print("done!")
 
@@ -154,10 +159,12 @@ if __name__ == "__main__":
     observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4) # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
     # 로봇의 action space 설정
     action_space = 2    # 이산적이라면 상,하,좌,우, 대각선 방향 총 8가지
+    # robot_policy = Random()
     # robot_policy = DQN(observation_space, action_space, gamma=0.98, lr=0.0005)
     robot_policy = SAC(observation_space, action_space, action_space_low=[-1, -1], action_space_high=[1, 1], gamma=0.99, policy_optimizer_lr=0.0005, value_optimizer_lr=0.0007, tau=0.005)
-    # robot_policy = Random()
     robot.set_policy(robot_policy)
+    # 학습 가중치 가져오기
+    robot.policy.load('learning_data/sac_tmp')
 
     # 환경에 로봇과 장애물 세팅하기
     env.set_robot(robot)

@@ -245,7 +245,7 @@ class SAC():
         # model
         self.replay_buffer = ReplayBuffer(max_size=100000, batch_size=256)
 
-        self.policy_model = FCGP(observation_space, action_bounds=bounds, hidden_dims=(256, 256))
+        self.online_model = FCGP(observation_space, action_bounds=bounds, hidden_dims=(256, 256))
 
         self.online_value_model_a = FCQSA(observation_space, action_space, hidden_dims=(256, 256))
         self.target_value_model_a = FCQSA(observation_space, action_space, hidden_dims=(256, 256))
@@ -253,7 +253,7 @@ class SAC():
         self.target_value_model_b = FCQSA(observation_space, action_space, hidden_dims=(256, 256))
         self.update_value_networks(tau=1.0)
 
-        self.policy_optimizer = optim.Adam(self.policy_model.parameters(), lr=policy_optimizer_lr)
+        self.policy_optimizer = optim.Adam(self.online_model.parameters(), lr=policy_optimizer_lr)
         self.value_optimizer_a = optim.Adam(self.online_value_model_a.parameters(), lr=value_optimizer_lr)
         self.value_optimizer_b = optim.Adam(self.online_value_model_b.parameters(), lr=value_optimizer_lr)
 
@@ -262,15 +262,15 @@ class SAC():
         batch_size = len(is_terminals)
 
         # policy loss
-        current_actions, logpi_s, _ = self.policy_model.full_pass(states)
+        current_actions, logpi_s, _ = self.online_model.full_pass(states)
 
-        target_alpha = (logpi_s + self.policy_model.target_entropy).detach()
-        alpha_loss = -(self.policy_model.logalpha * target_alpha).mean()
+        target_alpha = (logpi_s + self.online_model.target_entropy).detach()
+        alpha_loss = -(self.online_model.logalpha * target_alpha).mean()
 
-        self.policy_model.alpha_optimizer.zero_grad()
+        self.online_model.alpha_optimizer.zero_grad()
         alpha_loss.backward()
-        self.policy_model.alpha_optimizer.step()
-        alpha = self.policy_model.logalpha.exp()
+        self.online_model.alpha_optimizer.step()
+        alpha = self.online_model.logalpha.exp()
 
         current_q_sa_a = self.online_value_model_a(states, current_actions)
         current_q_sa_b = self.online_value_model_b(states, current_actions)
@@ -279,11 +279,11 @@ class SAC():
 
         self.policy_optimizer.zero_grad()
         policy_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.policy_model.parameters(), self.policy_max_grad_norm)
+        torch.nn.utils.clip_grad_norm_(self.online_model.parameters(), self.policy_max_grad_norm)
         self.policy_optimizer.step()
 
         # Q loss
-        ap, logpi_sp, _ = self.policy_model.full_pass(next_states)
+        ap, logpi_sp, _ = self.online_model.full_pass(next_states)
         q_spap_a = self.target_value_model_a(next_states, ap)
         q_spap_b = self.target_value_model_b(next_states, ap)
         q_spap = torch.min(q_spap_a, q_spap_b) - alpha * logpi_sp
@@ -336,9 +336,9 @@ class SAC():
     def predict(self, state):
         min_samples = self.replay_buffer.batch_size * self.n_warmup_batches
         if len(self.replay_buffer) < min_samples:
-            action = self.policy_model.select_random_action(state)
+            action = self.online_model.select_random_action(state)
         else:
-            action = self.policy_model.select_action(state)
+            action = self.online_model.select_action(state)
         return action
 
     def store_trajectory(self, state, action, reward, next_state, is_terminal):
@@ -349,6 +349,35 @@ class SAC():
         experiences = self.replay_buffer.sample()
         experiences = self.online_value_model_a.load(experiences)
         self.optimize_model(experiences)
+
+    def save(self, filename):
+        torch.save({
+            "online_model": self.online_model.state_dict(),
+            "online_value_model_a": self.online_value_model_a.state_dict(),
+            "online_value_model_b": self.online_value_model_b.state_dict(),
+            "target_value_model_a": self.target_value_model_a.state_dict(),
+            "target_value_model_b": self.target_value_model_b.state_dict(),
+            "policy_optimizer": self.policy_optimizer.state_dict(),
+            "value_optimizer_a": self.value_optimizer_a.state_dict(),
+            "value_optimizer_b": self.value_optimizer_b.state_dict(),
+
+        }, filename if filename[-4:] == ".tar" else filename + ".tar")
+
+    def load(self, filename):
+        filename = filename if filename[-4:] == ".tar" else filename + ".tar"
+        check_point = torch.load(filename)
+
+        self.online_model.load_state_dict(check_point['online_model'])
+
+        self.online_value_model_a.load_state_dict(check_point["online_value_model_a"])
+        self.online_value_model_b.load_state_dict(check_point["online_value_model_b"])
+        self.target_value_model_a.load_state_dict(check_point["target_value_model_a"])
+        self.target_value_model_b.load_state_dict(check_point["target_value_model_b"])
+
+        self.policy_optimizer.load_state_dict(check_point["policy_optimizer"])
+        self.value_optimizer_a.load_state_dict(check_point["value_optimizer_a"])
+        self.value_optimizer_b.load_state_dict(check_point["value_optimizer_b"])
+
 
 
 
