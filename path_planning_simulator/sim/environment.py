@@ -55,7 +55,7 @@ class Environment(gym.Env):
         self.safe_distance = 1.0  # 로봇과 장애물이 소환되는 위치의 거리를 세팅
 
         # 상태 정보 설계용
-        self.scailing_factor = 5
+        self.scailing_factor = 1
 
         # 보상함수 설계용
         self.target_norm = None
@@ -203,7 +203,7 @@ class Environment(gym.Env):
         조건 : time, collision, reach_goal 
         '''
         # 0 time reward
-        reward = -0.1
+        reward = -0.03
 
         # 1. reward for distance
         target_distance_vector = (self.robot.position[0] - self.robot.goal[0], self.robot.position[1] - self.robot.goal[1])
@@ -218,20 +218,27 @@ class Environment(gym.Env):
 
         self.target_norm = target_norm
 
+        # 2. reward for terminal
         if reach_goal:
-            reward += 5
+            reward += 10
             done = True
             info = None
+            self.target_norm = None
+
         elif collision:
-            reward += -5
+            reward -= 10
             done = True
             info = None
+            self.target_norm = None
+
         elif self.global_time >= self.time_limit - 1:
             reward += -5
             done = True
             info = None
+            self.target_norm = None
+
         else:
-            reward = 0
+            reward += 0
             done = False
             info = None
 

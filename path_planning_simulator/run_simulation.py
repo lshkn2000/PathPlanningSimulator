@@ -81,8 +81,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
             episodes_result.append(score)
 
             # log learning weights
-            if i_episode % 100 == 0 and i_episode != 0:
-                plot_log_data.add_scalar('Reward for seed {}'.format(i_seed), score, i_episode)     # Tensorboard
+            plot_log_data.add_scalar('Reward for seed {}'.format(i_seed), score, i_episode)     # Tensorboard
 
             # save learning weights
             if i_episode % 1 == 0 and i_episode != 0:
@@ -112,7 +111,7 @@ if __name__ == "__main__":
 
     # 환경 변수 설정
     time_step = 0.1                                         # real time 고려 한 시간 스텝 (s)
-    max_step_per_episode = 500                             # 시뮬레이션 상에서 에피소드당 최대 스텝 수
+    max_step_per_episode = 500                              # 시뮬레이션 상에서 에피소드당 최대 스텝 수
     time_limit = max_step_per_episode                       # 시뮬레이션 스텝을 고려한 real time 제한 소요 시간
     max_episodes = 1000
     env.set_time_step_and_time_limit(time_step, time_limit)
@@ -175,4 +174,4 @@ if __name__ == "__main__":
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
 
-    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=True, seed_num=seed_num, n_warmup_batches=5, update_target_interval=10)
+    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=False, seed_num=seed_num, n_warmup_batches=5, update_target_interval=10)
