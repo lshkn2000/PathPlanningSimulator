@@ -222,19 +222,26 @@ class Environment(gym.Env):
         if reach_goal:
             reward += 10
             done = True
-            info = None
+            info = "Goal"
             self.target_norm = None
 
         elif collision:
             reward -= 10
             done = True
-            info = None
+            info = "Collision"
             self.target_norm = None
 
         elif self.global_time >= self.time_limit - 1:
             reward += -5
             done = True
-            info = None
+            info = "TimeOut"
+            self.target_norm = None
+
+        # out of map get negative reward
+        elif -self.square_width // 2 > self.robot.position[0] or self.square_width // 2 < self.robot.position[0] or -self.square_height // 2 > self.robot.position[1] or self.square_height // 2 < self.robot.position[1]:
+            reward -= 10
+            done = True
+            info = "OutBoundary"
             self.target_norm = None
 
         else:

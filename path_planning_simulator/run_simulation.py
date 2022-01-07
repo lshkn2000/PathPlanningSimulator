@@ -111,11 +111,11 @@ if __name__ == "__main__":
 
     # 환경 변수 설정
     time_step = 0.1                                         # real time 고려 한 시간 스텝 (s)
-    max_step_per_episode = 500                              # 시뮬레이션 상에서 에피소드당 최대 스텝 수
+    max_step_per_episode = 250                              # 시뮬레이션 상에서 에피소드당 최대 스텝 수
     time_limit = max_step_per_episode                       # 시뮬레이션 스텝을 고려한 real time 제한 소요 시간
-    max_episodes = 1000
+    max_episodes = 10000
     env.set_time_step_and_time_limit(time_step, time_limit)
-    seed_num = 2
+    seed_num = 3
 
     # 로봇 소환
     # 1. 행동이 이산적인지 연속적인지 선택
