@@ -42,6 +42,7 @@ class Environment(gym.Env):
 
         # 한 에피소드당 행동 정보 기록용. reset()하면 내용 삭제됨
         self.dy_obstacles_positions = []
+        self.dy_obstacles_velocities = []
         self.robot_position = None
 
         # 한 에피소드당 스텝 시간 측정용
@@ -82,6 +83,7 @@ class Environment(gym.Env):
         self.dy_obstacles.append(obstacle)
         # 각 장애물 마다 위치 기록을 저장하므로 2차원 리스트 적용
         self.dy_obstacles_positions.append([])
+        self.dy_obstacles_velocities.append([])
 
     def set_static_obstacle(self, obstacle):
         # 장애물 수만큼 불러주어야 함
@@ -138,6 +140,7 @@ class Environment(gym.Env):
         for i, dy_obstacle in enumerate(self.dy_obstacles):
             if self.start_rvo2:
                 dy_obstacle.px, dy_obstacle.py = self.dy_obstacles_positions[i][self.step_cnt]
+                dy_obstacle.vx, dy_obstacle.vy = self.dy_obstacles_velocities[i][self.step_cnt]
             dx = dy_obstacle.px - self.robot.px
             dy = dy_obstacle.py - self.robot.py
 
@@ -279,6 +282,7 @@ class Environment(gym.Env):
         # 로봇, 장애물의 위치 정보 초기화
         self.robot_position = []
         self.dy_obstacles_positions = [[] for _ in range(len(self.dy_obstacles_list))]
+        self.dy_obstacles_velocities = [[] for _ in range(len(self.dy_obstacles_list))]
 
         # 로봇 위치, 속도, 목적지 초기화
         # random 적용
@@ -340,6 +344,7 @@ class Environment(gym.Env):
                     if not check_dy_obstacles_reach_goal[i]:
                         # 목적지 도달 체크
                         rvo2_dy_obstacle_pose = self.sim.getAgentPosition(i)
+                        rvo2_dy_obstacle_velocity = self.sim.getAgentVelocity(i)
                         dy_obstacle_goal = dy_obstacle.goal
                         reach_goal = np.linalg.norm(
                             np.array(rvo2_dy_obstacle_pose) - np.array(dy_obstacle_goal)) < dy_obstacle.radius
@@ -349,11 +354,13 @@ class Environment(gym.Env):
                             check_reach_goal_pose[i] = rvo2_dy_obstacle_pose
 
                         self.dy_obstacles_positions[i].append(rvo2_dy_obstacle_pose)
+                        self.dy_obstacles_velocities[i].append(rvo2_dy_obstacle_velocity)
 
                     # 목적지 도달하면 그 자리에 멈춤
                     else:
                         self.sim.setAgentVelocity(i, (0, 0))
                         self.dy_obstacles_positions[i].append(check_reach_goal_pose[i])
+                        self.dy_obstacles_velocities[i].append((0, 0))
 
         # 로봇과 장애물의 상태 정보 출력
         robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_goal]
