@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 class ReplayBuffer():
     def __init__(self,
-                 max_size=10000,
+                 max_size=100000,
                  batch_size=64):
         self.ss_mem = np.empty(shape=(max_size), dtype=np.ndarray)
         self.as_mem = np.empty(shape=(max_size), dtype=np.ndarray)
@@ -57,7 +57,7 @@ class FCDP(nn.Module):
                  action_bounds,
                  hidden_dims=(32,32),
                  activation_fc=F.relu,
-                 out_activation_fc=F.tanh):
+                 out_activation_fc=torch.tanh):
         super(FCDP, self).__init__()
         self.activation_fc = activation_fc
         self.out_activation_fc = out_activation_fc
@@ -268,6 +268,11 @@ class TD3():
         self.policy_noise_clip_ratio = 0.5
         self.train_policy_every_steps = 2
 
+        device = "cpu"
+        if torch.cuda.is_available():
+            device = "cuda:0"
+        self.device = torch.device(device)
+
         # action bounds
         # env.action_space.low : 연속적 행동의 최소값 , env.action_space.high : 연속적 행동의 최대값
         if not isinstance(action_space_low, np.ndarray) and not isinstance(action_space_high, np.ndarray):
@@ -276,12 +281,12 @@ class TD3():
         self.bounds = action_space_low, action_space_high
 
         self.replay_buffer = ReplayBuffer(max_size=100000, batch_size=256)
-        self.online_policy_model = FCDP(observation_space, action_bounds=self.bounds, hidden_dims=(256, 256))
-        self.target_policy_model = FCDP(observation_space, action_bounds=self.bounds, hidden_dims=(256, 256))
+        self.online_policy_model = FCDP(observation_space, action_bounds=self.bounds, hidden_dims=(512, 512, 256, 256, 128, 128))
+        self.target_policy_model = FCDP(observation_space, action_bounds=self.bounds, hidden_dims=(512, 512, 256, 256, 128, 128))
         self.update_policy_network(tau=1.0)
 
-        self.online_value_model = FCTQV(observation_space, action_space, hidden_dims=(256, 256))
-        self.target_value_model = FCTQV(observation_space, action_space, hidden_dims=(256, 256))
+        self.online_value_model = FCTQV(observation_space, action_space, hidden_dims=(512, 512, 256, 256, 128, 128))
+        self.target_value_model = FCTQV(observation_space, action_space, hidden_dims=(512, 512, 256, 256, 128, 128))
         self.update_value_network(tau=1.0)
 
         self.policy_optimizer = optim.Adam(self.online_policy_model.parameters(), lr=lr)
@@ -293,10 +298,10 @@ class TD3():
         states, actions, rewards, next_states, is_terminals = experiences
         batch_size = len(is_terminals)
 
-        env_min = torch.tensor(self.bounds[0], dtype=torch.float32)
-        env_max = torch.tensor(self.bounds[1], dtype=torch.float32)
+        env_min = torch.tensor(self.bounds[0], device=self.device, dtype=torch.float32)
+        env_max = torch.tensor(self.bounds[1], device=self.device, dtype=torch.float32)
         with torch.no_grad():
-            a_ran = torch.tensor(self.bounds[1] - self.bounds[0], dtype=torch.float32)
+            a_ran = torch.tensor(self.bounds[1] - self.bounds[0], device=self.device, dtype=torch.float32)
             a_noise = torch.randn_like(actions) * self.policy_noise_ratio * a_ran
             n_min = env_min * self.policy_noise_clip_ratio
             n_max = env_max * self.policy_noise_clip_ratio
@@ -375,3 +380,23 @@ class TD3():
         if time_step % update_target_policy_every_steps == 0:
             self.update_policy_network()  # for TD3
 
+    def save(self, filename):
+        torch.save({
+            "online_policy_model" : self.online_policy_model.state_dict(),
+            "online_value_model" : self.online_value_model.state_dict(),
+            "target_policy_model" : self.target_policy_model.state_dict(),
+            "target_value_model" : self.target_value_model.state_dict(),
+            "policy_optimizer" : self.policy_optimizer.state_dict(),
+            "value_optimizer" : self.value_optimizer.state_dict(),
+        }, filename if filename[-4:] == ".tar" else filename + ".tar")
+
+    def load(self, filename):
+        filename = filename if filename[-4:] == ".tar" else filename + ".tar"
+        check_point = torch.load(filename)
+
+        self.online_policy_model.load_state_dict(check_point['online_policy_model'])
+        self.online_value_model.load_state_dict(check_point["online_value_model"])
+        self.target_policy_model.load_state_dict(check_point["target_policy_model"])
+        self.target_value_model.load_state_dict(check_point["target_value_model"])
+        self.policy_optimizer.load_state_dict(check_point["policy_optimizer"])
+        self.value_optimizer.load_state_dict(check_point["value_optimizer"])

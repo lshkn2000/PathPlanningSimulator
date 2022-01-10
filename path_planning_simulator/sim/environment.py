@@ -215,7 +215,7 @@ class Environment(gym.Env):
         if self.target_norm is None:
             self.target_norm = target_norm
 
-        delta_reward = lambda x: np.tanh(0.9 * x) if x > 0 else np.tanh(x)
+        delta_reward = lambda x: 2 * ((np.tanh(0.9 * x)**2))  if x > 0 else 0
 
         reward += delta_reward(self.target_norm - target_norm)
 
@@ -490,21 +490,21 @@ class Environment(gym.Env):
         dy_obstacles_positions = self.dy_obstacles_positions
 
         def animate(frame):
-            # if frame == len(self.robot_position) - 1:
-            #
-            #     print('steps done. closing!')
-            #     # plt.ion()
-            #     # plt.close(fig)
-            #
-            # else:
-            # 로봇의 위치 기록을 기반으로 움직이기
-            robot_circle.center = self.robot_position[frame]
-            # 동적 장애물 위치 기록을 기반으로 움직이기
-            for k, dy_obst in enumerate(dy_obstacle_circle_list):
-                k_th_dy_obst_positions = dy_obstacles_positions[k]
-                dy_obst.center = k_th_dy_obst_positions[frame]
+            if frame == len(self.robot_position) - 1:
 
-            step_cnt.set_text('Step : {}'.format(frame + 1))
+                print('steps done. closing!')
+                # plt.ion()
+                plt.close(fig)
+
+            else:
+                # 로봇의 위치 기록을 기반으로 움직이기
+                robot_circle.center = self.robot_position[frame]
+                # 동적 장애물 위치 기록을 기반으로 움직이기
+                for k, dy_obst in enumerate(dy_obstacle_circle_list):
+                    k_th_dy_obst_positions = dy_obstacles_positions[k]
+                    dy_obst.center = k_th_dy_obst_positions[frame]
+
+                step_cnt.set_text('Step : {}'.format(frame + 1))
 
         f = r"./learning_data/video/"
         timestr = time.strftime("%m%d%H%M")

@@ -4,6 +4,7 @@ import random
 import time
 import datetime
 import pickle
+import collections
 
 import torch
 import numpy as np
@@ -17,6 +18,7 @@ from policy.random import Random
 from policy.linear import Linear
 from policy.dqn import DQN
 from policy.sac import SAC
+from policy.td3 import TD3
 from utils.plot_graph import plot_data
 
 
@@ -31,7 +33,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
     # 각 로봇, 동적 장애물 행동 취하기
     # 에피소드 실행
     print(env.robot.info)
-    print(env.dy_obstacles[0].info)
+    # print(env.dy_obstacles[0].info)
 
     total_seeds_episodes_results = []
     plot_log_data = SummaryWriter()
@@ -65,12 +67,12 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
                 min_samples = env.robot.policy.replay_buffer.batch_size * n_warmup_batches
                 if len(env.robot.policy.replay_buffer) > min_samples:
-                    env.robot.policy.train()
-                    # policy.train(time_step_for_ep) # for TD3
+                    # env.robot.policy.train()
+                    env.robot.policy.train(time_step_for_ep) # for TD3
 
                 if time_step_for_ep % update_target_interval == 0:
-                    env.robot.policy.update_network()
-                    # policy.update_network(time_step_for_ep, update_target_policy_every_steps=2, update_target_value_every_steps=2) # for TD3
+                    # env.robot.policy.update_network()
+                    env.robot.policy.update_network(time_step_for_ep, update_target_policy_every_steps=2, update_target_value_every_steps=2) # for TD3
 
                 if is_terminal:
                     print("{} seeds {} episode, {} steps, {} reward".format(i_seed+1, i_episode, time_step_for_ep, score))
@@ -84,11 +86,11 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
             plot_log_data.add_scalar('Reward for seed {}'.format(i_seed), score, i_episode)     # Tensorboard
 
             # save learning weights
-            if i_episode % 1 == 0 and i_episode != 0:
+            if i_episode % 100 == 0 and i_episode != 0:
                 env.robot.policy.save("learning_data/sac_tmp")
 
             # render check
-            if render and i_episode % 10 == 0 and i_episode != 0:
+            if render and i_episode % 100 == 0 and i_episode != 0:
                 env.render(path_info=True)
 
         total_seeds_episodes_results.append(episodes_result)
@@ -127,7 +129,7 @@ if __name__ == "__main__":
 
     # 장애물 소환
     # 3. 동적 장애물
-    dy_obstacle_num = 10
+    dy_obstacle_num = 0
     dy_obstacles = [None] * dy_obstacle_num
     for i in range(dy_obstacle_num):
         dy_obstacle = DynamicObstacle()
@@ -160,10 +162,12 @@ if __name__ == "__main__":
     action_space = 2    # 이산적이라면 상,하,좌,우, 대각선 방향 총 8가지
     # robot_policy = Random()
     # robot_policy = DQN(observation_space, action_space, gamma=0.98, lr=0.0005)
-    robot_policy = SAC(observation_space, action_space, action_space_low=[-1, -1], action_space_high=[1, 1], gamma=0.99, policy_optimizer_lr=0.0005, value_optimizer_lr=0.0007, tau=0.005)
+    # robot_policy = SAC(observation_space, action_space, action_space_low=[-1, -1], action_space_high=[1, 1], gamma=0.99, policy_optimizer_lr=0.0005, value_optimizer_lr=0.0007, tau=0.005)
+    robot_policy = TD3(observation_space, action_space, action_space_low=[-1, -1],
+                       action_space_high=[1, 1], gamma=0.99, lr=0.0003)
     robot.set_policy(robot_policy)
     # 학습 가중치 가져오기
-    robot.policy.load('learning_data/sac_tmp')
+    # robot.policy.load('learning_data/sac_tmp')
 
     # 환경에 로봇과 장애물 세팅하기
     env.set_robot(robot)
@@ -174,4 +178,4 @@ if __name__ == "__main__":
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
 
-    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=False, seed_num=seed_num, n_warmup_batches=5, update_target_interval=10)
+    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=True, seed_num=seed_num, n_warmup_batches=5, update_target_interval=10)
