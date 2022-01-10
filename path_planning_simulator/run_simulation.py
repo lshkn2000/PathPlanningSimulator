@@ -37,7 +37,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
     total_seeds_episodes_results = []
     plot_log_data = SummaryWriter()
-    for i_seed, seed in enumerate(SEED):
+    for i_seed, seed in enumerate(1, SEED):
         torch.manual_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
@@ -75,7 +75,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
                     env.robot.policy.update_network(time_step_for_ep, update_target_policy_every_steps=2, update_target_value_every_steps=2) # for TD3
 
                 if is_terminal:
-                    print("{} seeds {} episode, {} steps, {} reward".format(i_seed+1, i_episode, time_step_for_ep, score))
+                    print("{} seeds {} episode, {} steps, {} reward".format(i_seed, i_episode, time_step_for_ep, score))
                     gc.collect()
                     break
 
@@ -97,7 +97,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
         print('####################################')
         env.robot.policy.save("learning_data/sac_total")
-        print("{} set of simulation done".format(i+1))
+        print("{} set of simulation done".format(seed_num))
         print('####################################')
 
     plot_data(np.array(total_seeds_episodes_results), smooth=100, show=True, save=True)
