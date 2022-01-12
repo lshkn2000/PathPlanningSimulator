@@ -45,7 +45,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
         episodes_result = []
 
-        for i_episode in range(1, max_episodes+1):
+        for i_episode in range(max_episodes+1):
             state = env.reset(random_position=False, random_goal=False, max_steps=max_step_per_episode)
             is_terminal = False
             score = 0.0
