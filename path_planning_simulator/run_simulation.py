@@ -18,7 +18,8 @@ from policy.random import Random
 from policy.linear import Linear
 from policy.dqn import DQN
 from policy.sac import SAC
-from policy.td3 import TD3
+# from policy.td3 import TD3
+from policy.td3_new import TD3
 from utils.plot_graph import plot_data
 
 
@@ -53,7 +54,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
             n_warmup_batches = n_warmup_batches
             update_target_interval = update_target_interval # 1 for DDPG
 
-            for t in range(max_step_per_episode):
+            for t in range(1, max_step_per_episode+1):
                 action, discrete_action_index = env.robot.act(state)  # action : (vx, vy)
                 new_state, reward, is_terminal, info = env.step(action)
                 if env.robot.is_discrete_actions:
@@ -67,14 +68,14 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
                 min_samples = env.robot.policy.replay_buffer.batch_size * n_warmup_batches
                 if len(env.robot.policy.replay_buffer) > min_samples:
-                    # env.robot.policy.train()
-                    env.robot.policy.train(time_step_for_ep) # for TD3
+                    env.robot.policy.train()
+                    # env.robot.policy.train(time_step_for_ep) # for TD3
 
                 if time_step_for_ep % update_target_interval == 0:
-                    # env.robot.policy.update_network()
-                    env.robot.policy.update_network(time_step_for_ep, update_target_policy_every_steps=2, update_target_value_every_steps=2) # for TD3
+                    env.robot.policy.update_network()
+                    # env.robot.policy.update_network(time_step_for_ep, update_target_policy_every_steps=2, update_target_value_every_steps=2) # for TD3
 
-                if is_terminal:
+                if is_terminal or t == max_step_per_episode:
                     print("{} seeds {} episode, {} steps, {} reward".format(i_seed, i_episode, time_step_for_ep, score))
                     gc.collect()
                     break
@@ -163,8 +164,9 @@ if __name__ == "__main__":
     # robot_policy = Random()
     # robot_policy = DQN(observation_space, action_space, gamma=0.98, lr=0.0005)
     # robot_policy = SAC(observation_space, action_space, action_space_low=[-1, -1], action_space_high=[1, 1], gamma=0.99, policy_optimizer_lr=0.0005, value_optimizer_lr=0.0007, tau=0.005)
-    robot_policy = TD3(observation_space, action_space, action_space_low=[-1, -1],
-                       action_space_high=[1, 1], gamma=0.99, lr=0.0003)
+    # robot_policy = TD3(observation_space, action_space, action_space_low=[-1, -1],
+    #                    action_space_high=[1, 1], gamma=0.99, lr=0.0003)
+    robot_policy = TD3(observation_space, action_space, max_action=1)
     robot.set_policy(robot_policy)
     # 학습 가중치 가져오기
     # robot.policy.load('learning_data/sac_tmp')
@@ -178,4 +180,4 @@ if __name__ == "__main__":
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
 
-    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=True, seed_num=seed_num, n_warmup_batches=5, update_target_interval=10)
+    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=False, seed_num=seed_num, n_warmup_batches=5, update_target_interval=2)
