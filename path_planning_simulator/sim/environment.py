@@ -206,7 +206,7 @@ class Environment(gym.Env):
         조건 : time, collision, reach_goal 
         '''
         # 0 time reward
-        reward = -0.03
+        reward = -0.05
 
         # 1. reward for distance
         target_distance_vector = (self.robot.position[0] - self.robot.goal[0], self.robot.position[1] - self.robot.goal[1])
@@ -215,7 +215,7 @@ class Environment(gym.Env):
         if self.target_norm is None:
             self.target_norm = target_norm
 
-        delta_reward = lambda x: 2 * ((np.tanh(0.9 * x)**2))  if x > 0 else 0
+        delta_reward = lambda x: 5 * np.tanh(x)  if x > 0 else np.tanh(0.9 * x)
 
         reward += delta_reward(self.target_norm - target_norm)
 

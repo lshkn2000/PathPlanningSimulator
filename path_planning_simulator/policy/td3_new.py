@@ -47,13 +47,13 @@ class ReplayBuffer():
                       np.vstack(self.ps_mem[idxs]), \
                       np.vstack(self.ds_mem[idxs])
 
-        states, actions, new_states, rewards, is_terminals = experiences
+        states, actions, rewards, new_states, is_terminals = experiences
         states = torch.from_numpy(states).float().to(device)
         actions = torch.from_numpy(actions).float().to(device)
-        new_states = torch.from_numpy(new_states).float().to(device)
         rewards = torch.from_numpy(rewards).float().to(device)
+        new_states = torch.from_numpy(new_states).float().to(device)
         is_terminals = torch.from_numpy(is_terminals).float().to(device)
-        return states, actions, new_states, rewards, is_terminals
+        return states, actions, rewards, new_states, is_terminals
 
     def __len__(self):
         return self.size
@@ -149,7 +149,7 @@ class TD3(object):
         self.total_it = 0
 
     def predict(self, state):
-        action = self.actor(state).detach().numpy()
+        action = self.actor(state).detach().numpy().squeeze()
         return action
 
     def train(self):
