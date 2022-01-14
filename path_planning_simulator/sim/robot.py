@@ -8,10 +8,11 @@ from path_planning_simulator.sim.agent import Agent
 
 
 class Robot(Agent):
-    def __init__(self, discrete_action_space=None, robot_name="Robot"):
+    def __init__(self, discrete_action_space=None, is_holomonic=False, robot_name="Robot"):
         super(Robot, self).__init__()
         self.name = robot_name
-        # self.Action = namedtuple('Action', ['vx', 'vy'])
+        self.is_holonomic = is_holomonic
+        self.theta = None
         self.action = deque([None, None], maxlen=2)
         self.is_discrete_actions = False
         if discrete_action_space is not None:
@@ -40,21 +41,21 @@ class Robot(Agent):
             velocity = 2
             vx = velocity * np.cos(self.discrete_rad_angles[action])
             vy = velocity * np.sin(self.discrete_rad_angles[action])
-            # self.Action.vx = vx
-            # self.Action.vy = vy
             self.action[0] = vx
             self.action[1] = vy
-
             return self.action, action      # action은 discrete action 에 대한 Index
 
-        # 2. Continuous라면 vx, vy 에 대한 연속적인 값이 나오므로 vx, vy를 바로 넣어주면 된다.
+        # 2. Continuous라면 angle_velocity, linear_velocity 에 대한 연속적인 값이 나오므로 vx, vy를 바로 넣어주면 된다.
         elif isinstance(action, np.ndarray):
-            # self.Action.vx = action[0]
-            # self.Action.vy = action[1]
-            self.action[0] = action[0]
-            self.action[1] = action[1]
-
+            if self.is_holonomic:
+                self.action[0] = action[0]
+                self.action[1] = action[1]
+            else: # action[0] 는 각속도 action[1]은 선속도
+                self.theta = self.theta + (action[0] * 2 * np.pi)   # rad/s
+                self.action[0] = action[1] * np.cos(self.theta)
+                self.action[1] = action[1] * np.cos(self.theta)
             return self.action, None
+
         else:
             print("action : ", action)
             print("action type : {}".format(type(action)))

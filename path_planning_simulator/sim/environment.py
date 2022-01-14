@@ -427,7 +427,7 @@ class Environment(gym.Env):
                     dy_obstacle.gy = obstacle_gy
                     break
 
-    def render(self, path_info=True):
+    def render(self, path_info=True, is_plot=False):
         # color setting
         robot_color = 'green'
         static_obstacle_color = 'yellow'
@@ -509,4 +509,6 @@ class Environment(gym.Env):
         f = r"./learning_data/video/"
         timestr = time.strftime("%m%d%H%M")
         ani = animation.FuncAnimation(fig, animate, frames=len(self.robot_position), repeat=False)
+        if is_plot:
+            plt.show()
         ani.save(f + timestr + ".gif", writer='imagemagick', fps=30)
