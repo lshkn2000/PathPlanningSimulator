@@ -1,6 +1,5 @@
-import itertools
 from collections import deque
-from collections import namedtuple
+
 
 import numpy as np
 
@@ -8,16 +7,18 @@ from path_planning_simulator.sim.agent import Agent
 
 
 class Robot(Agent):
-    def __init__(self, discrete_action_space=None, is_holomonic=False, robot_name="Robot"):
+    def __init__(self, discrete_action_space=None, is_holomonic=False, detection_scope=float("inf"), robot_name="Robot"):
         super(Robot, self).__init__()
         self.name = robot_name
         self.is_holonomic = is_holomonic
-        self.theta = None
+        self.theta = np.pi/2
         self.action = deque([None, None], maxlen=2)
         self.is_discrete_actions = False
         if discrete_action_space is not None:
             self.discrete_rad_angles = [(0 + (2 * np.pi / discrete_action_space) * i) for i in range(1, discrete_action_space+1)]
             self.is_discrete_actions = True
+
+        self.detection_scope = detection_scope
 
     def act(self, ob):
         if self.policy is None:
@@ -31,6 +32,7 @@ class Robot(Agent):
         # set state information
         # ob의 리스트 차원 줄이기
         state = ob
+        state = self.policy.lstm.custom_state_for_lstm(state).detach()
 
         # choose action using state by policy
         action = self.policy.predict(state)
@@ -60,3 +62,6 @@ class Robot(Agent):
             print("action : ", action)
             print("action type : {}".format(type(action)))
             raise Exception("action의 형태를 확인하세요.")
+
+    def store_trjectory(self, state, action, reward, new_state, is_terminal):
+        self.policy.store_trajectory(state, action, reward, new_state, is_terminal)

@@ -52,7 +52,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
             time_step_for_ep = 0
 
             n_warmup_batches = n_warmup_batches
-            update_target_interval = update_target_interval # 1 for DDPG
+            update_target_interval = update_target_interval # 1 for DDP
 
             for t in range(1, max_step_per_episode+1):
                 if i_episode > 50:
@@ -66,9 +66,9 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
                         action = np.random.randn(action_space).clip(-max_action_scale, max_action_scale)
                 new_state, reward, is_terminal, info = env.step(action)
                 if env.robot.is_discrete_actions:
-                    env.robot.policy.store_trajectory(state, discrete_action_index, reward/10, new_state, is_terminal)
+                    env.robot.store_trjectory(state, discrete_action_index, reward/10, new_state, is_terminal)
                 else:
-                    env.robot.policy.store_trajectory(state, action, reward/10, new_state, is_terminal)
+                    env.robot.store_trjectory(state, action, reward/10, new_state, is_terminal)
 
                 state = new_state
                 time_step_for_ep += 1
@@ -138,7 +138,7 @@ if __name__ == "__main__":
 
     # 장애물 소환
     # 3. 동적 장애물
-    dy_obstacle_num = 0
+    dy_obstacle_num = 5
     dy_obstacles = [None] * dy_obstacle_num
     for i in range(dy_obstacle_num):
         dy_obstacle = DynamicObstacle()
@@ -166,7 +166,8 @@ if __name__ == "__main__":
         st_obstacles[i] = st_obstacle
 
     # 5. 로봇 정책(행동 규칙) 세팅
-    observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4) # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
+    # observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4) # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
+    observation_space = 17
     # 로봇의 action space 설정
     action_space = 2    # 이산적이라면 상,하,좌,우, 대각선 방향 총 8가지
     max_action_scale = 1    # 가속 테스트용이 아니라면 스케일은 1로 고정하는 것을 추천. 속도 정보를 바꾸려면 로봇 action 에서 직접 바꾸는 방식이 좋을 듯 하다.

@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from path_planning_simulator.utils.custom_state import FeaturedLSTM
+
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 debug = False
 
@@ -129,6 +131,8 @@ class TD3(object):
                  policy_freq=2
                  ):
 
+        self.lstm = FeaturedLSTM(input_dim=5, output_dim=17)    # 보행자의 속성 [px, py, vx, vy, r]
+
         self.replay_buffer = ReplayBuffer(max_size=100000, batch_size=256)
 
         self.actor = Actor(input_dim, action_dim, max_action).to(device)
@@ -157,7 +161,11 @@ class TD3(object):
         self.optimize_model(experiences)
 
     def optimize_model(self, experiences):
+        self.total_it += 1
         states, actions, rewards, next_states, is_terminals = experiences
+
+        states = self.lstm.custom_state_for_lstm(states)
+        next_states = self.lstm.custom_state_for_lstm(next_states)
 
         # Optimize Critic
         with torch.no_grad():
