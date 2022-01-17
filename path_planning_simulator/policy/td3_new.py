@@ -157,6 +157,7 @@ class TD3(object):
         self.optimize_model(experiences)
 
     def optimize_model(self, experiences):
+        self.total_it += 1
         states, actions, rewards, next_states, is_terminals = experiences
 
         # Optimize Critic
