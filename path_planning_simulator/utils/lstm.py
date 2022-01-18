@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 class LSTM(nn.Module):
@@ -12,7 +12,7 @@ class LSTM(nn.Module):
 		self.num_layers = num_layers
 		self.hidden_dim = hidden_dim
 
-		self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True)
+		self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True).to(device)
 		self.fc_1 = nn.Linear(hidden_dim, 128)
 		self.fc_2 = nn.Linear(128, output_dim)
 
