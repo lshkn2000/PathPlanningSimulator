@@ -153,7 +153,7 @@ class TD3(object):
         self.total_it = 0
 
     def predict(self, state):
-        action = self.actor(state).detach().numpy().squeeze()
+        action = self.actor(state).detach().cpu().numpy().squeeze()
         return action
 
     def train(self):
