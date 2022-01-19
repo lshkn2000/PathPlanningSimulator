@@ -131,7 +131,7 @@ class TD3(object):
                  policy_freq=2
                  ):
 
-        self.lstm = FeaturedLSTM(input_dim=5, output_dim=17)    # 보행자의 속성 [px, py, vx, vy, r]
+        self.lstm = FeaturedLSTM(input_dim=5, output_dim=input_dim, hidden_dim=input_dim)    # 보행자의 속성 [px, py, vx, vy, r]
 
         self.replay_buffer = ReplayBuffer(max_size=100000, batch_size=256)
 

@@ -12,9 +12,9 @@ class LSTM(nn.Module):
 		self.num_layers = num_layers
 		self.hidden_dim = hidden_dim
 
-		self.lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True).to(device)
-		self.fc_1 = nn.Linear(hidden_dim, 128)
-		self.fc_2 = nn.Linear(128, output_dim)
+		self.init_lstm = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True).to(device)
+		# self.fc_1 = nn.Linear(hidden_dim, 128).to(device)
+		# self.fc_2 = nn.Linear(128, output_dim).to(device)
 
 	def forward(self, x):
 		# input X : (batch_size, seq_len, input_dim) -> (batch_size, ped_num, ped_data)
@@ -22,12 +22,13 @@ class LSTM(nn.Module):
 		hidden = torch.zeros(self.num_layers, batch_size, self.hidden_dim).to(device)
 		cell = torch.zeros(self.num_layers, batch_size, self.hidden_dim).to(device)
 
-		output, (hn, cn) = self.lstm(x, (hidden, cell))
+		output, (hn, cn) = self.init_lstm(x, (hidden, cell))
+		output = hn[0]
 		# output : (batch_size, seq_length, hidden_layer)
-		output = output[:, -1, :]
-		# out = F.relu(output)
-		output = F.relu(self.fc_1(output))
-		output = self.fc_2(output)
+		# output = output[:, -1, :]
+		# output = F.relu(output)
+		# output = F.relu(self.fc_1(output))
+		# output = self.fc_2(output)
 
 		return output
 
