@@ -153,7 +153,6 @@ class Environment(gym.Env):
             if closest_dist_of_dy_obs - self.robot.radius - dy_obstacle.radius < 0:
                 # print("collision distance : ", closest_dist_of_dy_obs - self.robot.radius - dy_obstacle.radius)
                 collision = True
-                print("collision!")
                 break
 
         # 정적 장애물 충돌 검사
@@ -179,7 +178,6 @@ class Environment(gym.Env):
                 # 최단 거리가 원의 반지름보다 크면 충돌하지 않고 원의 반지름보다 작으면 충돌
                 if l2_norm < self.robot.radius:
                     collision = True
-                    print("collision!")
                     break
 
             else:
@@ -215,7 +213,7 @@ class Environment(gym.Env):
         if self.target_norm is None:
             self.target_norm = target_norm
 
-        delta_reward = lambda x: 5 * np.tanh(x)  if x > 0 else np.tanh(0.9 * x)
+        delta_reward = lambda x: 5 * np.tanh(x) if x > 0 else np.tanh(0.9 * x)
 
         reward += delta_reward(self.target_norm - target_norm)
 
@@ -227,18 +225,21 @@ class Environment(gym.Env):
             done = True
             info = "Goal"
             self.target_norm = None
+            print("goal")
 
         elif collision:
             reward -= 10
             done = True
             info = "Collision"
             self.target_norm = None
+            print("collision with obstacles")
 
         elif self.global_time >= self.time_limit - 1:
             reward += -5
             done = True
             info = "TimeOut"
             self.target_norm = None
+            print("time out")
 
         # out of map get negative reward
         elif -self.square_width // 2 > self.robot.position[0] or self.square_width // 2 < self.robot.position[0] or -self.square_height // 2 > self.robot.position[1] or self.square_height // 2 < self.robot.position[1]:
@@ -246,6 +247,7 @@ class Environment(gym.Env):
             done = True
             info = "OutBoundary"
             self.target_norm = None
+            print("collision with wall")
 
         else:
             reward += 0
@@ -331,8 +333,8 @@ class Environment(gym.Env):
                     pref_velocity /= np.linalg.norm(pref_velocity)
                 self.sim.setAgentPrefVelocity(agent, tuple(pref_velocity))
 
-            print('Simulation has %i agents and %i obstacle vertices in it.' %
-                  (self.sim.getNumAgents(), self.sim.getNumObstacleVertices()))
+            # print('Simulation has %i agents and %i obstacle vertices in it.' %
+            #       (self.sim.getNumAgents(), self.sim.getNumObstacleVertices()))
 
             check_dy_obstacles_reach_goal = [0] * len(self.dy_obstacles_list)  # rvo2의 목적지 도달 확인용
             check_reach_goal_pose = [0] * len(self.dy_obstacles_list)  # rvo2의 목적지 도달 위치 기록용
