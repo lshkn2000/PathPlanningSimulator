@@ -1,5 +1,6 @@
 # from IPython.display import clear_output
 # %matplotlib notebook
+import os
 import random
 import time
 import datetime
@@ -22,6 +23,15 @@ from policy.sac import SAC
 from policy.td3_new import TD3
 from utils.plot_graph import plot_data
 
+# from utils.pretrained import PretrainedSim
+
+
+def make_directories(path):
+    try:
+        os.makedirs(path)
+    except OSError:
+        if not os.path.isdir(path):
+            raise
 
 def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=1, n_warmup_batches=5, update_target_interval=1, **kwargs):
     # simulation start
@@ -38,6 +48,11 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
     total_seeds_episodes_results = []
     plot_log_data = SummaryWriter()
+
+    total_collision = 0
+    total_goal = 0
+    total_time_out = 0
+
     for i_seed, seed in enumerate(SEED):
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -45,7 +60,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
         episodes_result = []
 
-        for i_episode in range(max_episodes+1):
+        for i_episode in range(1, max_episodes+1):
             state = env.reset(random_position=False, random_goal=False, max_steps=max_step_per_episode)
             is_terminal = False
             score = 0.0
@@ -85,6 +100,16 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
                 if is_terminal or t == max_step_per_episode:
                     print("{} seeds {} episode, {} steps, {} reward".format(i_seed, i_episode, time_step_for_ep, score))
+                    if info == 'Goal':
+                        total_goal += 1
+                    elif info == 'Collision' or info == 'OutBoundary':
+                        total_collision += 1
+                    elif info == 'TimeOut':
+                        total_time_out += 1
+
+                    print(
+                        "Total Episode : {:5} , Total Collision : {:5f} , Total Goal : {:5f} , Total Time Out : {:5f}, Success Rate : {:.4f}".format(
+                            i_episode, total_collision, total_goal, total_time_out, total_goal / i_episode))
                     gc.collect()
                     break
 
@@ -117,6 +142,9 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
 
 if __name__ == "__main__":
+    make_directories("learning_data/reward_graph")
+    make_directories("learning_data/video")
+
     # 환경 소환
     env = Environment(start_rvo2=True)
 

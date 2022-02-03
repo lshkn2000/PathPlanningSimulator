@@ -32,7 +32,7 @@ class Robot(Agent):
         # set state information
         # ob의 리스트 차원 줄이기
         state = ob
-        state = self.policy.lstm.custom_state_for_lstm(state)
+        # state = self.policy.lstm.custom_state_for_lstm(state)
 
         # choose action using state by policy
         action = self.policy.predict(state)
