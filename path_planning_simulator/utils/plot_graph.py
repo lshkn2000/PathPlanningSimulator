@@ -73,7 +73,7 @@ def plot_data(data, smooth=1, show=True, save=False):
     # 표 시각화와 저장
     if save:
         timestr = time.strftime("%Y%m%d_%H%M%S")
-        plt.savefig('learning_data/reward_graph/{}.png'.format(timestr + "_AvgRwd"), dpi=100, facecolor='#eeeeee', edgecolor='black')
+        plt.savefig('./learning_data/reward_graph/{}.png'.format(timestr + "_AvgRwd"), dpi=100, facecolor='#eeeeee', edgecolor='black')
 
     if show:
         plt.show()
