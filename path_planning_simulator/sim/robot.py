@@ -12,7 +12,7 @@ class Robot(Agent):
         super(Robot, self).__init__()
         self.name = robot_name
         self.is_holonomic = is_holomonic
-        self.theta = None
+        self.theta = np.pi / 2 # 로봇이 북쪽 방향을 바라보는 것을 초기 방향으로 설정
         self.action = deque([None, None], maxlen=2)
         self.is_discrete_actions = False
         if discrete_action_space is not None:
