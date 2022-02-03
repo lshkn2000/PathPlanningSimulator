@@ -131,7 +131,7 @@ class TD3(object):
                  policy_freq=2
                  ):
 
-        self.lstm = FeaturedLSTM(input_dim=5, output_dim=input_dim, hidden_dim=input_dim)    # 보행자의 속성 [px, py, vx, vy, r]
+        # self.lstm = FeaturedLSTM(input_dim=5, output_dim=input_dim, hidden_dim=input_dim)    # 보행자의 속성 [px, py, vx, vy, r]
 
         self.replay_buffer = ReplayBuffer(max_size=100000, batch_size=256)
 
@@ -164,8 +164,8 @@ class TD3(object):
         self.total_it += 1
         states, actions, rewards, next_states, is_terminals = experiences
 
-        states = self.lstm.custom_state_for_lstm(states)
-        next_states = self.lstm.custom_state_for_lstm(next_states)
+        # states = self.lstm.custom_state_for_lstm(states)
+        # next_states = self.lstm.custom_state_for_lstm(next_states)
 
         # Optimize Critic
         with torch.no_grad():

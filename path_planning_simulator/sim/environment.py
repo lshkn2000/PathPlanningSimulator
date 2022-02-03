@@ -339,8 +339,8 @@ class Environment(gym.Env):
                     pref_velocity /= np.linalg.norm(pref_velocity)
                 self.sim.setAgentPrefVelocity(agent, tuple(pref_velocity))
 
-            print('Simulation has %i agents and %i obstacle vertices in it.' %
-                  (self.sim.getNumAgents(), self.sim.getNumObstacleVertices()))
+            # print('Simulation has %i agents and %i obstacle vertices in it.' %
+            #       (self.sim.getNumAgents(), self.sim.getNumObstacleVertices()))
 
             check_dy_obstacles_reach_goal = [0] * len(self.dy_obstacles_list)  # rvo2의 목적지 도달 확인용
             check_reach_goal_pose = [0] * len(self.dy_obstacles_list)  # rvo2의 목적지 도달 위치 기록용

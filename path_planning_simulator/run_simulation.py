@@ -22,8 +22,9 @@ from policy.sac import SAC
 # from policy.td3 import TD3
 from policy.td3_new import TD3
 from utils.plot_graph import plot_data
+from utils.replay_buffer import ReplayBuffer
 
-# from utils.pretrained import PretrainedSim
+from utils.pretrained import PretrainedSim
 
 
 def make_directories(path):
@@ -61,6 +62,14 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
         episodes_result = []
 
         for i_episode in range(1, max_episodes+1):
+            # pre train
+            pretrain_env.pretrain()
+            pretrained_replay_buffer = pretrain_env.get_pretrained_replay_buffer()
+            for experience in pretrained_replay_buffer:
+                state, action, reward, new_state, is_terminal = experience
+                env.robot.store_trjectory(state, action, reward/10, new_state, is_terminal)
+
+            # train
             state = env.reset(random_position=False, random_goal=False, max_steps=max_step_per_episode)
             is_terminal = False
             score = 0.0
@@ -79,7 +88,9 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
                         discrete_action_index = np.random.randint(action_space)
                     else:
                         action = np.random.randn(action_space).clip(-max_action_scale, max_action_scale)
+
                 new_state, reward, is_terminal, info = env.step(action)
+
                 if env.robot.is_discrete_actions:
                     env.robot.store_trjectory(state, discrete_action_index, reward/10, new_state, is_terminal)
                 else:
@@ -199,6 +210,7 @@ if __name__ == "__main__":
     # 로봇의 action space 설정
     action_space = 2    # 이산적이라면 상,하,좌,우, 대각선 방향 총 8가지
     max_action_scale = 1    # 가속 테스트용이 아니라면 스케일은 1로 고정하는 것을 추천. 속도 정보를 바꾸려면 로봇 action 에서 직접 바꾸는 방식이 좋을 듯 하다.
+
     # robot_policy = Random()
     # robot_policy = DQN(observation_space, action_space, gamma=0.98, lr=0.0005)
     # robot_policy = SAC(observation_space, action_space, action_space_low=[-1, -1], action_space_high=[1, 1], gamma=0.99, policy_optimizer_lr=0.0005, value_optimizer_lr=0.0007, tau=0.005)
@@ -206,8 +218,6 @@ if __name__ == "__main__":
     #                    action_space_high=[max_action_scale, max_action_scale], gamma=0.99, lr=0.0003)
     robot_policy = TD3(observation_space, action_space, max_action=max_action_scale)
     robot.set_policy(robot_policy)
-    # 학습 가중치 가져오기
-    # robot.policy.load('learning_data/tmp')
 
     # 환경에 로봇과 장애물 세팅하기
     env.set_robot(robot)
@@ -217,5 +227,22 @@ if __name__ == "__main__":
         env.set_dynamic_obstacle(obstacle)
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
+
+    # test for pretrained
+    env.reset()
+    # 경험 데이터 (정답 데이터) 저장용
+    pretrained_replay_buffer = collections.deque(maxlen=1000000)
+    # pretrain 학습
+    pretrain_env = PretrainedSim(env, time_step, [robot] + [obstacle for obstacle in dy_obstacles])
+    for i in range(10000): # episode
+        pretrain_env.pretrain()
+        print("pretrained episode : {}".format(i))
+
+    pretrain_env.save_model()
+
+    print("done")
+
+    # 학습 가중치 가져오기
+    robot.policy.load('learning_data/tmp')
 
     run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=False, seed_num=seed_num, n_warmup_batches=5, update_target_interval=2)

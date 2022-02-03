@@ -38,7 +38,7 @@ class Agent(object):
 
     @property
     def velocity(self):
-        return self.vx, self.vy     # return tuple
+        return self.vx, self.vy     # return tuple # if non-holonomic, vx 는 각속도, vy 는 선속도
 
     @property
     def goal(self):

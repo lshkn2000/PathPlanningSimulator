@@ -55,7 +55,7 @@ class Robot(Agent):
             else: # action[0] 는 각속도 action[1]은 선속도
                 self.theta = self.theta + (action[0] * 2 * np.pi)   # rad/s
                 self.action[0] = action[1] * np.cos(self.theta)
-                self.action[1] = action[1] * np.cos(self.theta)
+                self.action[1] = action[1] * np.sin(self.theta)
             return self.action, None
 
         else:
