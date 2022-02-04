@@ -165,9 +165,9 @@ class TD3(object):
             noise = (torch.randn_like(actions) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
             next_actions = (self.actor_target(next_states) + noise).clamp(-self.max_action, self.max_action)
 
-        target_Q1, target_Q2 = self.critic_target(next_states, next_actions)
-        target_Q = torch.min(target_Q1, target_Q2)
-        target_Q = rewards + self.discount * (1 - is_terminals) * target_Q
+            target_Q1, target_Q2 = self.critic_target(next_states, next_actions)
+            target_Q = torch.min(target_Q1, target_Q2)
+            target_Q = rewards + self.discount * (1 - is_terminals) * target_Q
 
         current_Q1, current_Q2 = self.critic(states, actions)
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
