@@ -52,11 +52,16 @@ class Robot(Agent):
                 self.action[1] = action[1]
             else: # action[0] 는 각속도 action[1]은 선속도
                 self.theta = self.theta + (action[0] * 2 * np.pi)   # rad/s
-                self.action[0] = action[1] * np.cos(self.theta)
-                self.action[1] = action[1] * np.cos(self.theta)
+                # scope angle to -2pi ~ 2pi
+                rot_delta_theta = self.theta / (2 * np.pi)
+                rot_delta_theta = (rot_delta_theta - np.trunc(rot_delta_theta)) * (2 * np.pi)
+
+                self.action[0] = action[1] * np.cos(rot_delta_theta)
+                self.action[1] = action[1] * np.sin(rot_delta_theta)
             return self.action, None
 
         else:
             print("action : ", action)
             print("action type : {}".format(type(action)))
-            raise Exception("action의 형태를 확인하세요.")
+            raise Exception("action의 형태를 확인하세요. 넘파이 이어야 합니다.")
+
