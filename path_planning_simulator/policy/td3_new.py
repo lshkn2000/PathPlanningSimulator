@@ -126,10 +126,11 @@ class TD3(object):
                  tau=0.005,
                  policy_noise=0.2,
                  noise_clip=0.5,
-                 policy_freq=2
+                 policy_freq=2,
+                 batch_size=256,
                  ):
 
-        self.replay_buffer = ReplayBuffer(max_size=100000, batch_size=256)
+        self.replay_buffer = ReplayBuffer(max_size=100000, batch_size=batch_size)
 
         self.actor = Actor(input_dim, action_dim, max_action).to(device)
         self.actor_target = copy.deepcopy(self.actor)
@@ -149,7 +150,7 @@ class TD3(object):
         self.total_it = 0
 
     def predict(self, state):
-        action = self.actor(state).detach().numpy().squeeze()
+        action = self.actor(state).cpu().data.numpy().flatten()
         return action
 
     def train(self):
