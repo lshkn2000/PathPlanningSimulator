@@ -7,6 +7,7 @@ import matplotlib.animation as animation
 import rvo2
 import gym
 import time
+from path_planning_simulator.utils.utils import *
 
 
 class Environment(gym.Env):
@@ -263,6 +264,17 @@ class Environment(gym.Env):
                                pow(pow((dy_obstacle.px - self.robot.px), 2) + pow((dy_obstacle.py - self.robot.py), 2),
                                    0.5) <= self.robot.detection_scope]
         next_st_obstacle_ob = [st_obstacle.self_state_wo_goal_rectangle for st_obstacle in self.st_obstacles]
+
+        # 거리순으로 정렬 (먼 순으로)
+        next_dy_obstacle_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2))**0.5,
+                                 reverse=True)
+
+        # 회전변환하여 로봇에 대한 상대좌표로 변환
+        if not self.robot.is_holonomic:
+            next_dy_obstacle_ob = [(*rotate2D([dy_obstacle[0], dy_obstacle[1]], self.robot.theta),
+                                    *rotate2D([dy_obstacle[2], dy_obstacle[3]], self.robot.theta),
+                                    dy_obstacle[4]) for dy_obstacle in next_dy_obstacle_ob]
+
         next_ob = [next_robot_ob] + [next_dy_obstacle_ob] + [next_st_obstacle_ob]
 
         next_state = list(itertools.chain(*next_ob))
@@ -303,7 +315,8 @@ class Environment(gym.Env):
             self.robot.vy = 0
         else:
             self.robot.px, self.robot.py = self.init_position
-            self.robot.vx, self.robot.vy = self.init_velocity
+            self.robot.vx, self.robot.vy = self.init_velocity   # if non-holonomic : vx = angular velocity, vx = linear velocity
+            self.robot.theta = np.pi / 2                        # world y axis direction is init direction of robot
 
         if random_goal:
             robot_gx = np.random.random() * (self.square_width * 0.5) * sign
@@ -380,6 +393,18 @@ class Environment(gym.Env):
                           pow(pow((dy_obstacle.px - self.robot.px), 2) + pow((dy_obstacle.py - self.robot.py), 2),
                               0.5) <= self.robot.detection_scope]
         st_obstacle_ob = [st_obstacle.self_state_wo_goal_rectangle for st_obstacle in self.st_obstacles]
+
+        # 멀리 있는 순으로 장애물을 정렬한다.
+        dy_obstacle_ob.sort(key=lambda x: (pow(x[0],2) + pow(x[1], 2))**0.5, reverse=True)
+
+        print("sort dy obstacle : ", dy_obstacle_ob)
+
+        # 회전변환하여 로봇에 대한 상대좌표로 변환, holomonic 일때
+        if not self.robot.is_holonomic:
+            dy_obstacle_ob = [(*rotate2D([dy_obstacle[0], dy_obstacle[1]], self.robot.theta),
+                               *rotate2D([dy_obstacle[2], dy_obstacle[3]], self.robot.theta),
+                               dy_obstacle[4]) for dy_obstacle in dy_obstacle_ob]
+
         ob = [robot_ob] + [dy_obstacle_ob] + [st_obstacle_ob]
 
         state = list(itertools.chain(*ob))
@@ -461,6 +486,10 @@ class Environment(gym.Env):
         # 초기 로봇 그리기
         robot_circle = Circle(self.robot_position[0], self.robot.radius, fill=True, color=robot_color)
         ax.add_artist(robot_circle)
+
+        # 로봇 탐지 범위 그리기
+        robot_detection_circle = Circle(self.robot_position[0], self.robot.detection_scope, fill=True, color='mintcream')
+        ax.add_artist(robot_detection_circle)
 
         # 목적지 그리기
         goal_x, goal_y = self.robot.goal
