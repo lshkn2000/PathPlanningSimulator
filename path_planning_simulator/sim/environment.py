@@ -486,8 +486,8 @@ class Environment(gym.Env):
         ax.add_artist(robot_circle)
 
         # 로봇 탐지 범위 그리기
-        robot_detection_circle = Circle(self.robot_position[0], self.robot.detection_scope, fill=True, color='mintcream')
-        ax.add_artist(robot_detection_circle)
+        # robot_detection_circle = Circle(self.robot_position[0], self.robot.detection_scope, fill=True, color='mintcream')
+        # ax.add_artist(robot_detection_circle)
 
         # 목적지 그리기
         goal_x, goal_y = self.robot.goal
