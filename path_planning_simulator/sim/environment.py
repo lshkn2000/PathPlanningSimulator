@@ -213,7 +213,7 @@ class Environment(gym.Env):
         if self.target_norm is None:
             self.target_norm = target_norm
 
-        delta_reward = lambda x: 5 * np.tanh(x) if x > 0 else np.tanh(0.9 * x)
+        delta_reward = lambda x: np.tanh(x) if x > 0 else np.tanh(0.9 * x)
 
         reward += delta_reward(self.target_norm - target_norm)
 
@@ -224,30 +224,30 @@ class Environment(gym.Env):
             reward += 10
             done = True
             info = "Goal"
+            print("goal!")
             self.target_norm = None
-            print("goal")
 
         elif collision:
-            reward -= 10
+            reward = -5
             done = True
             info = "Collision"
+            print("collision!")
             self.target_norm = None
-            print("collision with obstacles")
 
         elif self.global_time >= self.time_limit - 1:
-            reward += -5
+            reward = -5
             done = True
             info = "TimeOut"
+            print("timeout!")
             self.target_norm = None
-            print("time out")
 
         # out of map get negative reward
         elif -self.square_width // 2 > self.robot.position[0] or self.square_width // 2 < self.robot.position[0] or -self.square_height // 2 > self.robot.position[1] or self.square_height // 2 < self.robot.position[1]:
-            reward -= 10
+            reward = -5
             done = True
             info = "OutBoundary"
+            print("collision!")
             self.target_norm = None
-            print("collision with wall")
 
         else:
             reward += 0
@@ -256,7 +256,12 @@ class Environment(gym.Env):
 
         # next_step_ob
         next_robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_goal]
-        next_dy_obstacle_ob = [dy_obstacle.self_state_wo_goal for dy_obstacle in self.dy_obstacles]
+        # next_dy_obstacle_ob = [dy_obstacle.self_state_wo_goal for dy_obstacle in self.dy_obstacles]
+        # 로봇 관점에서 로봇의 감지 범위 내에 있는 장애물들의 방향 벡터를 장애물의 위치 정보대신 사용한다.
+        next_dy_obstacle_ob = [(dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py, dy_obstacle.vx,
+                                dy_obstacle.vy, dy_obstacle.radius) for dy_obstacle in self.dy_obstacles if
+                               pow(pow((dy_obstacle.px - self.robot.px), 2) + pow((dy_obstacle.py - self.robot.py), 2),
+                                   0.5) <= self.robot.detection_scope]
         next_st_obstacle_ob = [st_obstacle.self_state_wo_goal_rectangle for st_obstacle in self.st_obstacles]
         next_ob = [next_robot_ob] + [next_dy_obstacle_ob] + [next_st_obstacle_ob]
 
@@ -350,8 +355,9 @@ class Environment(gym.Env):
                         dy_obstacle_goal = dy_obstacle.goal
                         reach_goal = np.linalg.norm(
                             np.array(rvo2_dy_obstacle_pose) - np.array(dy_obstacle_goal)) < dy_obstacle.radius
+                        out_of_boundary = rvo2_dy_obstacle_pose[0] < -self.square_width // 2 or self.square_width // 2 > rvo2_dy_obstacle_pose[0] or -self.square_height // 2 > rvo2_dy_obstacle_pose[1] or self.square_height // 2 < rvo2_dy_obstacle_pose[1]
 
-                        if reach_goal:
+                        if reach_goal or out_of_boundary:
                             check_dy_obstacles_reach_goal[i] = reach_goal
                             check_reach_goal_pose[i] = rvo2_dy_obstacle_pose
 
@@ -365,8 +371,14 @@ class Environment(gym.Env):
                         self.dy_obstacles_velocities[i].append((0, 0))
 
         # 로봇과 장애물의 상태 정보 출력
+        # 로봇의 탐지 범위는 detection scope이다.
         robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_goal]
-        dy_obstacle_ob = [dy_obstacle.self_state_wo_goal for dy_obstacle in self.dy_obstacles]
+        # dy_obstacle_ob = [dy_obstacle.self_state_wo_goal for dy_obstacle in self.dy_obstacles]
+        # 로봇 관점에서 로봇의 감지 범위 내에 있는 장애물들의 방향 벡터를 장애물의 위치 정보대신 사용한다.
+        dy_obstacle_ob = [(dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py, dy_obstacle.vx,
+                           dy_obstacle.vy, dy_obstacle.radius) for dy_obstacle in self.dy_obstacles if
+                          pow(pow((dy_obstacle.px - self.robot.px), 2) + pow((dy_obstacle.py - self.robot.py), 2),
+                              0.5) <= self.robot.detection_scope]
         st_obstacle_ob = [st_obstacle.self_state_wo_goal_rectangle for st_obstacle in self.st_obstacles]
         ob = [robot_ob] + [dy_obstacle_ob] + [st_obstacle_ob]
 
@@ -455,6 +467,9 @@ class Environment(gym.Env):
         goal = mlines.Line2D([goal_x], [goal_y], color=goal_color, marker='*', linestyle='None', markersize=15,
                              label='Goal')
         ax.add_artist(goal)
+        # 도착지 허용범위 그리기
+        goal_offset = Circle((goal_x, goal_y), self.robot.goal_offset, fill=True, color='salmon')
+        ax.add_artist(goal_offset)
 
         # j개의 초기 동적 장애물 그리기
         dy_obstacle_circle_list = []
