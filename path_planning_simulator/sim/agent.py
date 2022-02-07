@@ -17,6 +17,11 @@ class Agent(object):
 
         self.time_step = None
 
+        self.goal_offset = 0
+
+    def set_goal_offset(self, offset):
+        self.goal_offset = offset
+
     def set_policy(self, policy):
         self.policy = policy
 
@@ -38,7 +43,7 @@ class Agent(object):
 
     @property
     def velocity(self):
-        return self.vx, self.vy     # return tuple
+        return self.vx, self.vy     # return tuple # if non-holonomic, vx 는 각속도, vy 는 선속도
 
     @property
     def goal(self):
@@ -96,7 +101,7 @@ class Agent(object):
         l2 = pow(px - gx, 2) + pow(py - gy, 2)
         l2_norm = pow(l2, 0.5)
 
-        return l2_norm < self.radius
+        return l2_norm < self.radius + self.goal_offset
 
     def update_policy(self):
         # 학습 네트워크 업데이트
