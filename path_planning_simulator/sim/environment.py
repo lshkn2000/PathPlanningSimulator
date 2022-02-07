@@ -397,8 +397,6 @@ class Environment(gym.Env):
         # 멀리 있는 순으로 장애물을 정렬한다.
         dy_obstacle_ob.sort(key=lambda x: (pow(x[0],2) + pow(x[1], 2))**0.5, reverse=True)
 
-        print("sort dy obstacle : ", dy_obstacle_ob)
-
         # 회전변환하여 로봇에 대한 상대좌표로 변환, holomonic 일때
         if not self.robot.is_holonomic:
             dy_obstacle_ob = [(*rotate2D([dy_obstacle[0], dy_obstacle[1]], self.robot.theta),
