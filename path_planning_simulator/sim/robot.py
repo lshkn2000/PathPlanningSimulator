@@ -51,7 +51,7 @@ class Robot(Agent):
                 self.action[0] = action[0]
                 self.action[1] = action[1]
             else: # action[0] 는 각속도 action[1]은 선속도
-                self.theta = self.theta + (action[0] * 2 * np.pi)   # rad/s
+                self.theta = self.theta + (action[0] * np.pi)   # rad/s
                 # scope angle to -2pi ~ 2pi
                 rot_delta_theta = self.theta / (2 * np.pi)
                 rot_delta_theta = (rot_delta_theta - np.trunc(rot_delta_theta)) * (2 * np.pi)
