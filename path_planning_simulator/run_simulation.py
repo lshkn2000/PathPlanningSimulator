@@ -86,7 +86,18 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
                     if env.robot.is_discrete_actions:
                         discrete_action_index = np.random.randint(action_space)
                     else:
-                        action = np.random.randn(action_space).clip(-max_action_scale, max_action_scale)
+                        angular_n_linear_velocity = np.random.randn(action_space).clip(-max_action_scale, max_action_scale)
+
+                        env.robot.theta = env.robot.theta + (angular_n_linear_velocity[0] * np.pi) * env.robot.time_step # input -pi ~ pi (rad/s)
+                        # scope angle to -2pi ~ 2pi
+                        rot_delta_theta = env.robot.theta / (2 * np.pi)
+                        rot_delta_theta = (rot_delta_theta - np.trunc(rot_delta_theta)) * (2 * np.pi)
+                        # scope angle to 0 ~ 2pi
+                        rot_delta_theta = (2 * np.pi + rot_delta_theta) * (rot_delta_theta < 0) + (rot_delta_theta) * (rot_delta_theta > 0)
+
+                        action_vx = angular_n_linear_velocity[1] * np.cos(rot_delta_theta)
+                        action_vy = angular_n_linear_velocity[1] * np.sin(rot_delta_theta)
+                        action = np.array([action_vx, action_vy]) 
                         
                 new_state, reward, is_terminal, info = env.step(action)
                 
