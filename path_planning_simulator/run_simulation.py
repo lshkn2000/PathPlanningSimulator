@@ -23,7 +23,7 @@ from policy.sac import SAC
 from policy.td3_new import TD3
 from utils.plot_graph import plot_data
 
-# from utils.pretrained import PretrainedSim
+from utils.pretrained import PretrainedSim
 
 
 def make_directories(path):
@@ -70,11 +70,16 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
             update_target_interval = update_target_interval # 1 for DDP
 
             for t in range(1, max_step_per_episode+1):
-                if i_episode > 50:
+                if i_episode >= 0:
                     # action : (vx, vy)
                     # robot 의 act 함수에서 if holonomic : (vx, vy) else (ang_vel, lin_vel)에 대한 학습이 되고 (vx, vy)가 출력된다.
                     # 따라서 여기서의 출력은 변환이 완료된 vx, vy 이다.
-                    action, discrete_action_index = env.robot.act(state)  # action : (vx, vy)
+                    if env.robot.is_holonomic: # 여기서 holonomic : world coord + cartesian coord 
+                        action, discrete_action_index = env.robot.act(state)
+                    else: # 여기서 non-holonomic : robot coord + polar coord
+                        action, angular_n_linear_velocity = env.robot.act(state)
+                        angular_n_linear_velocity += np.random.normal(0.0, max_action_scale * action_noise, size=action_space)
+                        angular_n_linear_velocity = angular_n_linear_velocity.clip(-max_action_scale, max_action_scale)
                     action += np.random.normal(0.0, max_action_scale * action_noise, size=action_space)
                     action = action.clip(-max_action_scale, max_action_scale)
                 else:
@@ -82,11 +87,16 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
                         discrete_action_index = np.random.randint(action_space)
                     else:
                         action = np.random.randn(action_space).clip(-max_action_scale, max_action_scale)
+                        
                 new_state, reward, is_terminal, info = env.step(action)
+                
                 if env.robot.is_discrete_actions:
                     env.robot.store_trjectory(state, discrete_action_index, reward, new_state, is_terminal)
                 else:
-                    env.robot.store_trjectory(state, action, reward, new_state, is_terminal)
+                    if env.robot.is_holonomic:
+                        env.robot.store_trjectory(state, action, reward, new_state, is_terminal)
+                    else:
+                        env.robot.store_trjectory(state, angular_n_linear_velocity, reward, new_state, is_terminal)
 
                 state = new_state
                 time_step_for_ep += 1
@@ -155,9 +165,9 @@ if __name__ == "__main__":
     time_step = 0.1                                         # real time 고려 한 시간 스텝 (s)
     max_step_per_episode = 200                              # 시뮬레이션 상에서 에피소드당 최대 스텝 수
     time_limit = max_step_per_episode                       # 시뮬레이션 스텝을 고려한 real time 제한 소요 시간
-    max_episodes = 10000
+    max_episodes = 100000
     env.set_time_step_and_time_limit(time_step, time_limit)
-    seed_num = 3
+    seed_num = 1
     action_noise = 0.1
 
     # 로봇 소환
@@ -210,8 +220,6 @@ if __name__ == "__main__":
     #                    action_space_high=[max_action_scale, max_action_scale], gamma=0.99, lr=0.0003)
     robot_policy = TD3(observation_space, action_space, max_action=max_action_scale)
     robot.set_policy(robot_policy)
-    # 학습 가중치 가져오기
-    # robot.policy.load('learning_data/tmp')
 
     # 환경에 로봇과 장애물 세팅하기
     env.set_robot(robot)
@@ -221,5 +229,21 @@ if __name__ == "__main__":
         env.set_dynamic_obstacle(obstacle)
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
+        
+    # pretrained
+    env.reset()
+    # 경험 데이터 (정답 데이터) 저장용
+    pretrained_replay_buffer = collections.deque(maxlen=1000000)
+    # pretrain 학습
+    pretrain_env = PretrainedSim(env, time_step)
+    for i in range(10000): # episode
+        pretrain_env.pretrain()
+        print("pretrained episode : {}".format(i))
+
+    pretrain_env.save_model() 
+    print("Pre train done!)
+    
+    # 학습 가중치 가져오기
+    robot.policy.load('learning_data/tmp')
 
     run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=False, seed_num=seed_num, n_warmup_batches=5, update_target_interval=2)
