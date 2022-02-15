@@ -33,6 +33,7 @@ class Robot(Agent):
         state = ob
 
         # choose action using state by policy
+        # if holonomic : vx vy (cartesian) / non holonomic : w v (polar)
         action = self.policy.predict(state)
 
         # action 이 discrete 인가 continuous인가
@@ -58,10 +59,12 @@ class Robot(Agent):
 
                 self.action[0] = action[1] * np.cos(rot_delta_theta)
                 self.action[1] = action[1] * np.sin(rot_delta_theta)
-            return self.action, None
+            return self.action, action
 
         else:
             print("action : ", action)
             print("action type : {}".format(type(action)))
             raise Exception("action의 형태를 확인하세요. 넘파이 이어야 합니다.")
-
+            
+    def store_trjectory(self, state, action, reward, new_state, is_terminal):
+        self.policy.store_trajectory(state, action, reward, new_state, is_terminal)
