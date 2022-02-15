@@ -56,6 +56,8 @@ class Robot(Agent):
                 # scope angle to -2pi ~ 2pi
                 rot_delta_theta = self.theta / (2 * np.pi)
                 rot_delta_theta = (rot_delta_theta - np.trunc(rot_delta_theta)) * (2 * np.pi)
+                # scope 0 ~ 2pi
+                rot_delta_theta = (2 * np.pi + rot_delta_theta) * (rot_delta_theta < 0) + rot_delta_theta * (rot_delta_theta > 0)
 
                 self.action[0] = action[1] * np.cos(rot_delta_theta)
                 self.action[1] = action[1] * np.sin(rot_delta_theta)
