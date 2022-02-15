@@ -41,6 +41,7 @@ class ReplayBuffer():
 
         idxs = np.random.choice(
             self.size, batch_size, replace=False)
+        
         experiences = np.vstack(self.ss_mem[idxs]), \
                       np.vstack(self.as_mem[idxs]), \
                       np.vstack(self.rs_mem[idxs]), \
@@ -53,6 +54,7 @@ class ReplayBuffer():
         rewards = torch.from_numpy(rewards).float().to(device)
         new_states = torch.from_numpy(new_states).float().to(device)
         is_terminals = torch.from_numpy(is_terminals).float().to(device)
+        
         return states, actions, rewards, new_states, is_terminals
 
     def __len__(self):
