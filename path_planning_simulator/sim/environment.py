@@ -271,8 +271,8 @@ class Environment(gym.Env):
 
         # 회전변환하여 로봇에 대한 상대좌표로 변환
         if not self.robot.is_holonomic:
-            next_dy_obstacle_ob = [(*rotate2D([dy_obstacle[0], dy_obstacle[1]], self.robot.theta),
-                                    *rotate2D([dy_obstacle[2], dy_obstacle[3]], self.robot.theta),
+            next_dy_obstacle_ob = [(*rotate2D([dy_obstacle[0], dy_obstacle[1]], (np.pi / 2 - self.robot.theta)),
+                                    *rotate2D([dy_obstacle[2], dy_obstacle[3]], (np.pi / 2 - self.robot.theta)),
                                     dy_obstacle[4]) for dy_obstacle in next_dy_obstacle_ob]
 
         next_ob = [next_robot_ob] + [next_dy_obstacle_ob] + [next_st_obstacle_ob]
@@ -388,8 +388,10 @@ class Environment(gym.Env):
         robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_goal]
         # dy_obstacle_ob = [dy_obstacle.self_state_wo_goal for dy_obstacle in self.dy_obstacles]
         # 로봇 관점에서 로봇의 감지 범위 내에 있는 장애물들의 방향 벡터를 장애물의 위치 정보대신 사용한다.
-        dy_obstacle_ob = [(dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py, dy_obstacle.vx,
-                           dy_obstacle.vy, dy_obstacle.radius) for dy_obstacle in self.dy_obstacles if
+        dy_obstacle_ob = [(dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py, 
+                           dy_obstacle.vx - self.robot.vx, dy_obstacle.vy - self.robot.vy, 
+                           dy_obstacle.radius) 
+                          for dy_obstacle in self.dy_obstacles if
                           pow(pow((dy_obstacle.px - self.robot.px), 2) + pow((dy_obstacle.py - self.robot.py), 2),
                               0.5) <= self.robot.detection_scope]
         st_obstacle_ob = [st_obstacle.self_state_wo_goal_rectangle for st_obstacle in self.st_obstacles]
@@ -399,8 +401,8 @@ class Environment(gym.Env):
 
         # 회전변환하여 로봇에 대한 상대좌표로 변환, holomonic 일때
         if not self.robot.is_holonomic:
-            dy_obstacle_ob = [(*rotate2D([dy_obstacle[0], dy_obstacle[1]], self.robot.theta),
-                               *rotate2D([dy_obstacle[2], dy_obstacle[3]], self.robot.theta),
+            dy_obstacle_ob = [(*rotate2D([dy_obstacle[0], dy_obstacle[1]], (np.pi / 2 - self.robot.theta)),
+                               *rotate2D([dy_obstacle[2], dy_obstacle[3]], (np.pi / 2 - self.robot.theta)),
                                dy_obstacle[4]) for dy_obstacle in dy_obstacle_ob]
 
         ob = [robot_ob] + [dy_obstacle_ob] + [st_obstacle_ob]
