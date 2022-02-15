@@ -5,6 +5,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from path_planning_simulator.utils.custom_state import FeaturedLSTM
+from path_planning_simulator.utils.featured_state import FeaturedState
+
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 debug = False
@@ -43,6 +45,7 @@ class ReplayBuffer():
 
         idxs = np.random.choice(
             self.size, batch_size, replace=False)
+
         experiences = np.vstack(self.ss_mem[idxs]), \
                       np.vstack(self.as_mem[idxs]), \
                       np.vstack(self.rs_mem[idxs]), \
@@ -55,6 +58,7 @@ class ReplayBuffer():
         rewards = torch.from_numpy(rewards).float().to(device)
         new_states = torch.from_numpy(new_states).float().to(device)
         is_terminals = torch.from_numpy(is_terminals).float().to(device)
+
         return states, actions, rewards, new_states, is_terminals
 
     def __len__(self):
@@ -78,11 +82,12 @@ class Actor(nn.Module):
         return x
 
     def forward(self, state):
+        # state shape : [256, 32]
         a = self._format(state)
         a = F.relu(self.l1(a))
         a = F.relu(self.l2(a))
-        return self.max_action * torch.tanh(self.l3(a))
-
+        action = self.max_action * torch.tanh(self.l3(a))
+        return action
 
 class Critic(nn.Module):
     def __init__(self, state_dim, action_dim):
@@ -128,12 +133,16 @@ class TD3(object):
                  tau=0.005,
                  policy_noise=0.2,
                  noise_clip=0.5,
-                 policy_freq=2
+                 policy_freq=2,
+                 batch_size=256,
                  ):
 
         # self.lstm = FeaturedLSTM(input_dim=5, output_dim=input_dim, hidden_dim=input_dim)    # 보행자의 속성 [px, py, vx, vy, r]
+        # self.featured_state = FeaturedState(batch_size=batch_size)
+        # self.featured_state_optimizer = torch.optim.Adam(self.featured_state.parameters(), lr=3e-4)
 
-        self.replay_buffer = ReplayBuffer(max_size=100000, batch_size=256)
+
+        self.replay_buffer = ReplayBuffer(max_size=100000, batch_size=batch_size)
 
         self.actor = Actor(input_dim, action_dim, max_action).to(device)
         self.actor_target = copy.deepcopy(self.actor)
@@ -153,7 +162,8 @@ class TD3(object):
         self.total_it = 0
 
     def predict(self, state):
-        action = self.actor(state).detach().cpu().numpy().squeeze()
+        # state = torch.FloatTensor(state.reshape(1, -1)).to(device)
+        action = self.actor(state).cpu().data.numpy().flatten()
         return action
 
     def train(self):
@@ -166,15 +176,17 @@ class TD3(object):
 
         # states = self.lstm.custom_state_for_lstm(states)
         # next_states = self.lstm.custom_state_for_lstm(next_states)
+        # states = self.featured_state(states)
+        # next_states = self.featured_state(next_states)
 
         # Optimize Critic
         with torch.no_grad():
             noise = (torch.randn_like(actions) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
             next_actions = (self.actor_target(next_states) + noise).clamp(-self.max_action, self.max_action)
 
-        target_Q1, target_Q2 = self.critic_target(next_states, next_actions)
-        target_Q = torch.min(target_Q1, target_Q2)
-        target_Q = rewards + self.discount * (1 - is_terminals) * target_Q
+            target_Q1, target_Q2 = self.critic_target(next_states, next_actions)
+            target_Q = torch.min(target_Q1, target_Q2)
+            target_Q = rewards + self.discount * (1 - is_terminals) * target_Q
 
         current_Q1, current_Q2 = self.critic(states, actions)
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
@@ -190,15 +202,17 @@ class TD3(object):
 
             # Optimize the actor
             self.actor_optimizer.zero_grad()
+            # self.featured_state_optimizer.zero_grad()
             actor_loss.backward()
             self.actor_optimizer.step()
+            # self.featured_state_optimizer.step()
 
-    def update_network(self):
-        for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
-            target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+    # def update_network(self):
+            for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
-        for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
-            target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+            for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
     def store_trajectory(self, state, action, reward, next_state, is_terminal):
         experience = (state, action, reward, next_state, 1 if is_terminal else 0)

@@ -33,8 +33,10 @@ class Robot(Agent):
         # ob의 리스트 차원 줄이기
         state = ob
         # state = self.policy.lstm.custom_state_for_lstm(state)
+        # state = self.policy.featured_state(state)
 
         # choose action using state by policy
+        # if holonomic : vx vy / non holonomic : w v
         action = self.policy.predict(state)
 
         # action 이 discrete 인가 continuous인가
@@ -53,15 +55,21 @@ class Robot(Agent):
                 self.action[0] = action[0]
                 self.action[1] = action[1]
             else: # action[0] 는 각속도 action[1]은 선속도
-                self.theta = self.theta + (action[0] * 2 * np.pi)   # rad/s
-                self.action[0] = action[1] * np.cos(self.theta)
-                self.action[1] = action[1] * np.sin(self.theta)
-            return self.action, None
+                self.theta = self.theta + (action[0] * np.pi) * self.time_step   # input -pi ~ pi (rad/s)
+                # scope angle to -2pi ~ 2pi
+                rot_delta_theta = self.theta / (2 * np.pi)
+                rot_delta_theta = (rot_delta_theta - np.trunc(rot_delta_theta)) * (2 * np.pi)
+                # scope 0 ~ 2pi
+                rot_delta_theta = (2 * np.pi + rot_delta_theta) * (rot_delta_theta < 0) + rot_delta_theta * (rot_delta_theta > 0)
+
+                self.action[0] = action[1] * np.cos(rot_delta_theta)
+                self.action[1] = action[1] * np.sin(rot_delta_theta)
+            return self.action, action
 
         else:
             print("action : ", action)
             print("action type : {}".format(type(action)))
-            raise Exception("action의 형태를 확인하세요.")
+            raise Exception("action의 형태를 확인하세요. 넘파이 이어야 합니다.")
 
     def store_trjectory(self, state, action, reward, new_state, is_terminal):
         self.policy.store_trajectory(state, action, reward, new_state, is_terminal)
