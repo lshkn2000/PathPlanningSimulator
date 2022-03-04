@@ -13,7 +13,7 @@ debug = False
 
 
 class ReplayBuffer():
-    def __init__(self, max_size=100000, batch_size=64):
+    def __init__(self, max_size=1000000, batch_size=64):
         self.ss_mem = np.empty(shape=(max_size), dtype=np.ndarray)
         self.as_mem = np.empty(shape=(max_size), dtype=np.ndarray)
         self.rs_mem = np.empty(shape=(max_size), dtype=np.ndarray)
@@ -88,6 +88,7 @@ class Actor(nn.Module):
         a = F.relu(self.l2(a))
         action = self.max_action * torch.tanh(self.l3(a))
         return action
+
 
 class Critic(nn.Module):
     def __init__(self, state_dim, action_dim):

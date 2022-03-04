@@ -1,20 +1,28 @@
+import os
 import collections
 import itertools
 import random
+from tqdm import tqdm
+from sklearn.preprocessing import normalize, Normalizer
 
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle, Rectangle, ConnectionPatch
 import matplotlib.lines as mlines
 import torch
+from torch.utils.data import DataLoader, random_split
+
 import rvo2
+import pytorch_lightning as pl
+
 from path_planning_simulator.utils.utils import *
+from path_planning_simulator.utils.VAE import VAEEXE, VanillaVAE, make_directories
 
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
-class PretrainedSim(object):
+class PretrainedSimwithVAE(object):
     def __init__(self, env, time_step, max_step=200, max_speed=1):
         self.sim = None
         self.robot_position = None
@@ -36,7 +44,45 @@ class PretrainedSim(object):
         self.time_step = time_step
         self.params = {"neighborDist": 10, "maxNeighbors": 20, "timeHorizon": 5, "timeHorizonObst": 5}
 
-        self.pretraied_replay_buffer = collections.deque(maxlen=100000)
+        self.episode_cnt = 0
+
+        self.pretraied_replay_buffer = collections.deque()
+        self.vae_state_replay_buffer = collections.deque()
+
+    def set_pretrain_replay_buffer(self, buffer):
+        self.pretraied_replay_buffer = buffer
+
+    def set_vae_state_replay_buffer(self, buffer):
+        self.vae_state_replay_buffer = buffer
+
+    def get_pretrained_replay_buffer(self):
+        return self.pretraied_replay_buffer
+
+    def get_vae_state_replay_buffer(self):
+        return self.vae_state_replay_buffer
+
+    def reparameterize(self, mu, log_var):
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)
+        return eps * std + mu
+
+    def save_model(self):
+        self.env.robot.policy.save("learning_data/tmp")
+
+    def flatten_(self, state):
+        state = list(itertools.chain(*state))
+        state_flatten = []  # 내부 튜플 제거...
+        for item in state:
+            if isinstance(item, tuple):
+                if len(item) != 0:
+                    for x in item:
+                        state_flatten.append(x)
+                else:
+                    pass
+            else:
+                state_flatten.append(item)
+
+        return state_flatten
 
     def reset(self, random_robot_spawn=True):
         self.env.reset()
@@ -98,25 +144,10 @@ class PretrainedSim(object):
 
         return reward, done
 
-    def flatten_(self, state):
-        state = list(itertools.chain(*state))
-        state_flatten = []  # 내부 튜플 제거...
-        for item in state:
-            if isinstance(item, tuple):
-                if len(item) != 0:
-                    for x in item:
-                        state_flatten.append(x)
-                else:
-                    pass
-            else:
-                state_flatten.append(item)
-
-        return state_flatten
-
     def pretrain_(self):
         self.reset()
 
-        obstacle_num = len(self.dy_obstacles_list)
+        # obstacle_num = len(self.dy_obstacles_list)
 
         # 로봇, 장애물의 위치 정보 초기화
         self.sim = rvo2.PyRVOSimulator(self.time_step,
@@ -161,7 +192,11 @@ class PretrainedSim(object):
                 pref_velocity /= np.linalg.norm(pref_velocity)
             self.sim.setAgentPrefVelocity(agent, tuple(pref_velocity))
 
-    def pretrain(self, train_policy=True):
+    def data_collection(self, train_policy=True):
+        # cnt episodes for set num of pretrain
+        self.episode_cnt += 1
+
+        # init robot reach
         robot_reached = False
 
         # logged robot and dy-obj trajectories
@@ -218,7 +253,7 @@ class PretrainedSim(object):
         sliced_agents_states = np.array([obstacles_states[:,i] for i in range(len(obstacles_states[0]))])
 
         # transform log data for offline learning
-        for i, ob in enumerate(sliced_agents_states[1:-1]): # 코드 수정 전에는 [1:-1]을 사용했었음. 성능이 안나오면 혹시 고려해볼것
+        for i, ob in enumerate(sliced_agents_states[1:-1]):
             robot_ob = ob[0]
             # 위치, 속도를 로봇 기준 상대 좌표로 변환
             dy_obstacle_ob = [(dy_obstacle[0] - robot_ob[0], dy_obstacle[1] - robot_ob[1],
@@ -258,9 +293,11 @@ class PretrainedSim(object):
                 new_state = np.array(self.flatten_(new_state))
 
                 # store trajectory for training
-                self.env.robot.policy.store_trajectory(state, action, reward, new_state, is_terminal)
+                # self.env.robot.policy.store_trajectory(state, action, reward, new_state, is_terminal)
 
                 self.pretraied_replay_buffer.append((state, action, reward, new_state, is_terminal))
+                self.vae_state_replay_buffer.append(state)
+                self.vae_state_replay_buffer.append(new_state)
 
             else:
                 '''
@@ -344,24 +381,107 @@ class PretrainedSim(object):
                 new_state = np.array(self.flatten_(new_state))
 
                 # store trajectory for training
-                self.env.robot.policy.store_trajectory(state, action, reward, new_state, is_terminal)
+                # self.env.robot.policy.store_trajectory(state, action, reward, new_state, is_terminal)
 
                 self.pretraied_replay_buffer.append((state, action, reward, new_state, is_terminal))
+                self.vae_state_replay_buffer.append(state)
+                self.vae_state_replay_buffer.append(new_state)
 
                 # 로봇 월드 좌표계의 orientation update
                 self.robot_orientation = self.next_robot_orientation
 
-        if train_policy and (len(self.env.robot.policy.replay_buffer) > self.env.robot.policy.replay_buffer.batch_size):
-            self.env.robot.policy.train()
+        # if train_policy and (len(self.env.robot.policy.replay_buffer) > self.env.robot.policy.replay_buffer.batch_size):
+        #     self.env.robot.policy.train()
 
         # rendering
         # self.render(obstacles_states)
 
-    def save_model(self):
-        self.env.robot.policy.save("learning_data/tmp")
+    def pretrain(self, vae_model=None, vae_normalizer=None, pretrain_episodes=5000):
+        # set transitions to replay buffer
+        if vae_model is not None:
+            for state, action, reward, new_state, is_terminal in tqdm(self.pretraied_replay_buffer, desc="Transform State with VAE"):
+                if vae_normalizer is not None:
+                    # normalization
+                    state = state.reshape(1, -1)        # (1, N)
+                    new_state = new_state.reshape(1, -1)    # (1, N)
+                    norm_state = vae_normalizer.transform(state)
+                    norm_new_state = vae_normalizer.transform(new_state)
+                    vae_state = torch.from_numpy(norm_state).float()  # state (numpy) -> vae state (tensor)
+                    vae_new_state = torch.from_numpy(norm_new_state).float()  # state (numpy) -> vae state (tensor)
+                else:
+                    # transform for vae model
+                    vae_state = torch.from_numpy(state).float()  # state (numpy) -> vae state (tensor)
+                    vae_state = vae_state.unsqueeze(0)  # [1, N]
+                    vae_new_state = torch.from_numpy(new_state).float()  # state (numpy) -> vae state (tensor)
+                    vae_new_state = vae_new_state.unsqueeze(0)  # [1, N]
 
-    def get_pretrained_replay_buffer(self):
-        return self.pretraied_replay_buffer
+                # get model output
+                mu_state, logvar_state, state, recon_state = vae_model(vae_state)
+                mu_new_state, logvar_new_state, new_state, recon_new_state = vae_model(vae_new_state)
+
+                # reparameterize
+                z_state = self.reparameterize(mu_state, logvar_state)
+                z_new_state = self.reparameterize(mu_new_state, logvar_new_state)
+                # tensor -> numpy
+                z_state = z_state.cpu().data.numpy()
+                z_new_state = z_new_state.cpu().data.numpy()
+
+                # store trajectories
+                self.env.robot.policy.store_trajectory(z_state, action, reward, z_new_state, is_terminal)
+        else:
+            for state, action, reward, new_state, is_terminal in tqdm(self.pretraied_replay_buffer, desc="Transform State without VAE"):
+                self.env.robot.policy.store_trajectory(state, action, reward, new_state, is_terminal)
+
+        # pretrain policy
+        for i in tqdm(range(pretrain_episodes), desc="Offline Learning Pretraining"):
+            self.env.robot.policy.train()
+
+    def trainVAE(self, input_dim, latent_dim, hidden_dim=None, **kwargs):
+        # hyper parameter setting
+        hparameters = kwargs
+
+        # replay buffer 의 상태 정보를 가져온다.
+        # tensor 작업
+        state_dataset = np.array(self.vae_state_replay_buffer)
+        # state_dataset = normalize(state_dataset) # 정규화 작업 (-1 ~1)
+        vae_normalizer = Normalizer().fit(state_dataset)
+        state_dataset = vae_normalizer.transform(state_dataset)
+        state_dataset = torch.from_numpy(state_dataset).float()
+
+        train_data_num = int(len(state_dataset) * 0.8)
+        val_data_num = len(state_dataset) - train_data_num
+        train, val = random_split(state_dataset, [train_data_num, val_data_num])
+
+        train_dataset = DataLoader(train, batch_size=hparameters['batch_size'], num_workers=5, drop_last=True)
+        val_dataset = DataLoader(val, batch_size=hparameters['batch_size'], num_workers=5, drop_last=True)
+
+        # set model
+        vae_model = VanillaVAE(input_dim=input_dim, latent_dim=latent_dim, hidden_dim=hidden_dim)
+
+        # load check point
+        make_directories("vae_ckpts")
+        CHECKPOINT_PATH = os.environ.get("PATH_CHECKPOINT", "vae_ckpts/")
+        ckpt_name = f'vae_test_epoch={hparameters["max_epochs"]}.pt'
+        pretrained_filename = os.path.join(CHECKPOINT_PATH, ckpt_name)
+
+        if os.path.isfile(pretrained_filename):
+            print("Found Pretrained Model, loading...")
+            vae_model.load_state_dict(torch.load(pretrained_filename)['state_dict'])
+            # set pytorch lightning
+            vae_exe_model = VAEEXE(vae_model=vae_model, **hparameters)
+        else:
+            # set pytorch lightning
+            vae_exe_model = VAEEXE(vae_model=vae_model, **hparameters)
+
+            # set trainer
+            trainer = pl.Trainer(gpus=1 if str(device).startswith("cuda") else 0,
+                                 auto_lr_find=True,
+                                 max_epochs=hparameters["max_epochs"])
+            trainer.fit(vae_exe_model, train_dataset, val_dataset)
+            # save model
+            torch.save({"state_dict": vae_model.state_dict()}, pretrained_filename)
+
+        return vae_exe_model, vae_normalizer
 
     def render(self, obstacles_states):
         robot_states = obstacles_states[0]
@@ -408,7 +528,6 @@ class PretrainedSim(object):
                 ax.add_artist(robot_circle)
 
         plt.show()
-
 
 
 

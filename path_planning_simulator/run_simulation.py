@@ -6,6 +6,7 @@ import time
 import datetime
 import pickle
 import collections
+from tqdm import tqdm
 
 import torch
 import numpy as np
@@ -25,6 +26,7 @@ from utils.plot_graph import plot_data
 from utils.replay_buffer import ReplayBuffer
 
 from utils.pretrained import PretrainedSim
+from utils.pretrained_with_vae import PretrainedSimwithVAE
 
 
 def make_directories(path):
@@ -51,27 +53,36 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
     total_seeds_episodes_results = []
     plot_log_data = SummaryWriter()
 
-    total_collision = 0
-    total_goal = 0
-    total_time_out = 0
+    # offline learning test
+    offline_episodes = 1000
+    offline_replay_buffer = ReplayBuffer(batch_size=64)
+    tmp_buffer = collections.deque(maxlen=max_step_per_episode * max_episodes)
+    tmp_trajectories = collections.deque(maxlen=max_step_per_episode)
 
     for i_seed, seed in enumerate(SEED):
         torch.manual_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
 
-        episodes_result = []
+        total_collision = 0
+        total_goal = 0
+        total_time_out = 0
 
-        for i_episode in range(1, max_episodes+1):
-            # pre train
-            # pretrain_env.pretrain()
-            # pretrained_replay_buffer = pretrain_env.get_pretrained_replay_buffer()
-            # for experience in pretrained_replay_buffer:
-            #     state, action, reward, new_state, is_terminal = experience
-            #     env.robot.store_trjectory(state, action, reward, new_state, is_terminal)
-
+        # episodes_result = []
+        sim_episodes = tqdm(range(1, max_episodes+1))
+        for i_episode in sim_episodes:
             # train
             state = env.reset(random_position=False, random_goal=False, max_steps=max_step_per_episode)
+
+            # vae transform
+            vae_state = state.reshape(1, -1) # (1, N)
+            vae_state = vae_normalizer.transform(vae_state)
+            vae_state = torch.from_numpy(vae_state).float() # state (numpy) -> vae state (tensor)
+            mu_state, logvar_state, input_state, recon_state = vae_model(vae_state)
+            # state = pretrain_env.reparameterize(mu_state, logvar_state)
+            state = mu_state
+            state = state.cpu().data.numpy() # vae state (tensor) -> state (numpy)
+
             is_terminal = False
             score = 0.0
             time_step_for_ep = 0
@@ -80,7 +91,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
             update_target_interval = update_target_interval # 1 for DDP
 
             for t in range(1, max_step_per_episode+1):
-                if i_episode >= 0:
+                if i_episode >= 0:  # Policy Action
                     # action : (vx, vy)
                     # robot 의 act 함수에서 if holonomic : (vx, vy) else (ang_vel, lin_vel)에 대한 학습이 되고 (vx, vy)가 출력된다.
                     # 따라서 여기서의 출력은 변환이 완료된 vx, vy 이다.
@@ -92,21 +103,46 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
                         angular_n_linear_velocity = angular_n_linear_velocity.clip(-max_action_scale, max_action_scale)
                     action += np.random.normal(0.0, max_action_scale * action_noise, size=action_space)
                     action = action.clip(-max_action_scale, max_action_scale)
-                else:
+                else:   # Random action
                     if env.robot.is_discrete_actions:
                         discrete_action_index = np.random.randint(action_space)
                     else:
-                        action = np.random.randn(action_space).clip(-max_action_scale, max_action_scale)
+                        angular_n_linear_velocity = np.random.randn(action_space).clip(-max_action_scale,
+                                                                                       max_action_scale)
+
+                        env.robot.theta = env.robot.theta + (angular_n_linear_velocity[
+                                                                 0] * np.pi) * env.robot.time_step  # input -pi ~ pi (rad/s)
+                        # scope angle to -2pi ~ 2pi
+                        rot_delta_theta = env.robot.theta / (2 * np.pi)
+                        rot_delta_theta = (rot_delta_theta - np.trunc(rot_delta_theta)) * (2 * np.pi)
+                        # scope angle to 0 ~ 2pi
+                        rot_delta_theta = (2 * np.pi + rot_delta_theta) * (rot_delta_theta < 0) + (rot_delta_theta) * (
+                                    rot_delta_theta > 0)
+
+                        action_vx = angular_n_linear_velocity[1] * np.cos(rot_delta_theta)
+                        action_vy = angular_n_linear_velocity[1] * np.sin(rot_delta_theta)
+                        action = np.array([action_vx, action_vy])
 
                 new_state, reward, is_terminal, info = env.step(action)
+
+                # vae transform
+                vae_new_state = new_state.reshape(1, -1) # (1, N)
+                vae_new_state = vae_normalizer.transform(vae_new_state)
+                vae_new_state = torch.from_numpy(vae_new_state).float()  # state (numpy) -> vae state (tensor)
+                mu_new_state, logvar_new_state, input_new_state, recon_new_state = vae_model(vae_new_state)
+                # new_state = pretrain_env.reparameterize(mu_new_state, logvar_new_state)
+                new_state = mu_new_state
+                new_state = new_state.cpu().data.numpy()  # vae state (tensor) -> state (numpy)
 
                 if env.robot.is_discrete_actions:
                     env.robot.store_trjectory(state, discrete_action_index, reward, new_state, is_terminal)
                 else:
                     if env.robot.is_holonomic:
                         env.robot.store_trjectory(state, action, reward, new_state, is_terminal)
+                        tmp_trajectories.append((state, action, reward, new_state, is_terminal))
                     else:
                         env.robot.store_trjectory(state, angular_n_linear_velocity, reward, new_state, is_terminal)
+                        tmp_trajectories.append((state, angular_n_linear_velocity, reward, new_state, is_terminal))
 
                 state = new_state
                 time_step_for_ep += 1
@@ -116,28 +152,28 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
                 if len(env.robot.policy.replay_buffer) > min_samples:
                     env.robot.policy.train()
                     # env.robot.policy.train(time_step_for_ep) # for TD3
-                #
-                # if time_step_for_ep % update_target_interval == 0:
-                #     env.robot.policy.update_network()
-                #     # env.robot.policy.update_network(time_step_for_ep, update_target_policy_every_steps=2, update_target_value_every_steps=2) # for TD3
 
                 if is_terminal or t == max_step_per_episode:
-                    print("{} seeds {} episode, {} steps, {} reward".format(i_seed, i_episode, time_step_for_ep, score))
                     if info == 'Goal':
                         total_goal += 1
+                        for experience in tmp_trajectories:
+                            offline_replay_buffer.store(experience)
                     elif info == 'Collision' or info == 'OutBoundary':
                         total_collision += 1
+                        tmp_trajectories.clear()
                     elif info == 'TimeOut':
                         total_time_out += 1
+                        tmp_trajectories.clear()
 
-                    print(
-                        "Total Episode : {:5} , Total Collision : {:5f} , Total Goal : {:5f} , Total Time Out : {:5f}, Success Rate : {:.4f}".format(
-                            i_episode, total_collision, total_goal, total_time_out, total_goal / i_episode))
+                    sim_episodes.set_postfix({'seeds': i_seed, 'episode': i_episode, 'steps': time_step_for_ep, 'reward': score,
+                                              'Total Episode': i_episode, 'Total Collision': total_collision, 'Total Goal': total_goal,
+                                              'Total Time Out': total_time_out, 'Success Rate': total_goal/i_episode})
+
                     gc.collect()
                     break
 
             # stat
-            episodes_result.append(score)
+            # episodes_result.append(score)
 
             # log learning weights
             plot_log_data.add_scalar('Reward for seed {}'.format(i_seed), score, i_episode)     # Tensorboard
@@ -150,14 +186,20 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
             if render and i_episode % 50 == 0 and i_episode != 0 and time_step_for_ep < 120:
                 env.render(path_info=True, is_plot=False)
 
-        total_seeds_episodes_results.append(episodes_result)
+        # Offline Learning
+        for _ in tqdm(range(offline_episodes), desc='Offline Learning'):
+            offline_experiences = offline_replay_buffer.sample()
+            env.robot.policy.optimize_model(offline_experiences)
+
+        # for plot data
+        # total_seeds_episodes_results.append(episodes_result)
 
         print('####################################')
         env.robot.policy.save("learning_data/total")
         print("{} set of simulation done".format(seed_num))
         print('####################################')
 
-    plot_data(np.array(total_seeds_episodes_results), smooth=100, show=True, save=True)
+    # plot_data(np.array(total_seeds_episodes_results), smooth=100, show=True, save=True)
     end_time = time.time() - start_time
     plot_log_data.close()
     print("simulation operating time : {}".format(str(datetime.timedelta(seconds=end_time))))
@@ -167,6 +209,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 if __name__ == "__main__":
     make_directories("learning_data/reward_graph")
     make_directories("learning_data/video")
+    make_directories("vae_ckpts")
 
     # 환경 소환
     env = Environment(start_rvo2=True)
@@ -175,16 +218,22 @@ if __name__ == "__main__":
     time_step = 0.1                                         # real time 고려 한 시간 스텝 (s)
     max_step_per_episode = 200                              # 시뮬레이션 상에서 에피소드당 최대 스텝 수
     time_limit = max_step_per_episode                       # 시뮬레이션 스텝을 고려한 real time 제한 소요 시간
-    max_episodes = 100000
+    max_episodes = 10000
     env.set_time_step_and_time_limit(time_step, time_limit)
     seed_num = 1
     action_noise = 0.1
+
+    pretrain_episodes = 5000
+
+    # vae hyperparameter
+    vae_hparameter = {"max_epochs": 10, "learning_rate": 0.002, "kld_weight":0.0001, "batch_size": 64}
+    vae_hidden_dim = [128, 64, 32]
 
     # 로봇 소환
     # 1. 행동이 이산적인지 연속적인지 선택
     # 2. 로봇 초기화
     is_discrete_action_space = None # continuous action space 이면 None
-    robot = Robot(discrete_action_space=is_discrete_action_space, is_holomonic=False, robot_name="Robot")
+    robot = Robot(discrete_action_space=is_discrete_action_space, is_holomonic=True, robot_name="Robot")
     # robot_init_position = {"px":0, "py":-2, "vx":0, "vy":0, "gx":0, "gy":4, "radius":0.2}
     robot.set_agent_attribute(px=0, py=-2, vx=0, vy=0, gx=0, gy=4, radius=0.2, v_pref=1, time_step=time_step)
     robot.set_goal_offset(0.3)  # 0.3m 범위 내에서 목적지 도착 인정
@@ -219,10 +268,12 @@ if __name__ == "__main__":
         st_obstacles[i] = st_obstacle
 
     # 5. 로봇 정책(행동 규칙) 세팅
-    observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4) # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
-    # observation_space = 4 + (dy_obstacle_num * 3) # featured...
-    # observation_space = 17
-    # 로봇의 action space 설정
+    # observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4) # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
+    raw_observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4)
+
+    # RL Model input dimension
+    observation_space = raw_observation_space
+    # Setting Robot Action space
     action_space = 2    # 이산적이라면 상,하,좌,우, 대각선 방향 총 8가지
     max_action_scale = 1    # 가속 테스트용이 아니라면 스케일은 1로 고정하는 것을 추천. 속도 정보를 바꾸려면 로봇 action 에서 직접 바꾸는 방식이 좋을 듯 하다.
 
@@ -243,22 +294,56 @@ if __name__ == "__main__":
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
 
-    # test for pretrained
+    #####PRETRAINING#####
+    # Reset for pretraining
     env.reset()
     # 경험 데이터 (정답 데이터) 저장용
     pretrained_replay_buffer = collections.deque(maxlen=1000000)
-    # pretrain 학습
-    pretrain_env = PretrainedSim(env, time_step)
-    for i in range(10000): # episode
-        pretrain_env.pretrain()
-        print("pretrained episode : {}".format(i))
 
+    # pretrain (+ VAE) 학습
+    # 1) Collecting Pretrain Data
+    pretrain_env = PretrainedSimwithVAE(env, time_step)
+
+    # If pretrain data exist, Get that.
+    PRETRAIN_BUFFER_PATH = 'vae_ckpts/buffer_dict.pkl'
+    if os.path.isfile(PRETRAIN_BUFFER_PATH):
+        print("Found Pretrain Data Buffer")
+        with open(PRETRAIN_BUFFER_PATH, 'rb') as f:
+            buffer_dict = pickle.load(f)
+        pretrain_env.set_pretrain_replay_buffer(buffer_dict["pretrain"])
+        pretrain_env.set_vae_state_replay_buffer(buffer_dict['vae'])
+    else:
+        # 없다면 pretrain data 수집하기
+        for i in tqdm(range(pretrain_episodes), desc="PreTrain Data Collecting"):  # episode
+            pretrain_env.data_collection()
+        # 저장하기
+        pretrain_buffer = pretrain_env.get_pretrained_replay_buffer()
+        vae_buffer = pretrain_env.get_vae_state_replay_buffer()
+        buffer_dict = {"pretrain": pretrain_buffer, "vae": vae_buffer}
+        with open(PRETRAIN_BUFFER_PATH, 'wb') as f:
+            pickle.dump(buffer_dict, f)
+
+    # 2) CASE 1. pretrain 학습
+    # pretrain_env.pretrain(vae_model=None, pretrain_episodes=pretrain_episodes)
+
+    # 2) CASE 2. Training VAE Model
+    vae_model, vae_normalizer = pretrain_env.trainVAE(input_dim=raw_observation_space,
+                                                      latent_dim=observation_space,
+                                                      hidden_dim=vae_hidden_dim,
+                                                      **vae_hparameter)
+    vae_model.eval()
+    pretrain_env.pretrain(vae_model=vae_model, vae_normalizer=vae_normalizer)
+
+    #####PRETRAINING Done#####
+
+    # 학습된 모델 저장
     pretrain_env.save_model()
 
+    print("################")
+    print("Pretraining Done")
+    print("################")
 
-    print("done")
-    #
     # 학습 가중치 가져오기
     robot.policy.load('learning_data/tmp')
-    #
-    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=True, seed_num=seed_num, n_warmup_batches=5, update_target_interval=2)
+
+    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=False, seed_num=seed_num, n_warmup_batches=5, update_target_interval=2)
