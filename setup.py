@@ -12,4 +12,7 @@ setup(name='PathPlanningSimulator',
                         'matplotlib',
                         'numpy',
                         'scipy',
-                        'tensorboard'])
+                        'tensorboard',
+                        'tqdm',
+                        'sklearn',
+                        'pytorch_lightning'])

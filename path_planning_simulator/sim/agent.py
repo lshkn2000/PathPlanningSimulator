@@ -1,5 +1,5 @@
 import abc
-
+import numpy as np
 
 class Agent(object):
     def __init__(self):
@@ -12,6 +12,9 @@ class Agent(object):
         self.gy = None
         self.radius = None
         self.v_pref = None
+
+        self.cartesian = True
+        self.theta = 0
 
         self.policy = None  # 학습 알고리즘 클래스를 가져오기
 
@@ -71,6 +74,7 @@ class Agent(object):
         print("Agent Name : ", self.name)
         print("policy : ", self.policy.__class__.__name__)
         print("============================================")
+        return
 
     @abc.abstractmethod
     def act(self, ob):
@@ -81,18 +85,10 @@ class Agent(object):
         return
 
     def step(self, action):
-        # px = self.px + action.vx * self.time_step
-        # py = self.py + action.vy * self.time_step
-        px = self.px + action[0] * self.time_step
-        py = self.py + action[1] * self.time_step
-
-        self.px = px
-        self.py = py
-
-        # self.vx = action.vx
-        # self.vy = action.vy
         self.vx = action[0]
         self.vy = action[1]
+        self.px = self.px + action[0] * self.time_step
+        self.py = self.py + action[1] * self.time_step
 
     def reach_goal(self):
         px, py = self.position
