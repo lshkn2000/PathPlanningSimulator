@@ -6,6 +6,8 @@ import time
 import datetime
 import pickle
 import collections
+
+import numpy
 from tqdm import tqdm
 
 import torch
@@ -93,7 +95,12 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
             for t in range(1, max_step_per_episode+1):
                 # Policy Action
-                action = env.robot.act(state)       # if cartesian : [Vx Vy] else : [W, V]
+
+                # Action Setting with Random
+                if i_episode >= 0:
+                    action = env.robot.act(state)       # if cartesian : [Vx Vy] else : [W, V]
+                else:
+                    action = np.random.randn(action_space).clip(-max_action_scale, max_action_scale)
 
                 new_state, reward, is_terminal, info = env.step(action)
 
@@ -154,7 +161,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
                 env.robot.policy.save("learning_data/tmp")
 
             # render check
-            if render and i_episode % 1000 == 0 and i_episode != 0 and time_step_for_ep < 120:
+            if render and i_episode % 1 == 0 and i_episode != 0 and time_step_for_ep < 120:
                 env.render(path_info=True, is_plot=False)
 
         # Offline Learning
@@ -281,10 +288,6 @@ if __name__ == "__main__":
     max_action_scale = 1    # 가속 테스트용이 아니라면 스케일은 1로 고정하는 것을 추천. 속도 정보를 바꾸려면 로봇 action 에서 직접 바꾸는 방식이 좋을 듯 하다.
 
     # robot_policy = Random()
-    # robot_policy = DQN(observation_space, action_space, gamma=0.98, lr=0.0005)
-    # robot_policy = SAC(observation_space, action_space, action_space_low=[-1, -1], action_space_high=[1, 1], gamma=0.99, policy_optimizer_lr=0.0005, value_optimizer_lr=0.0007, tau=0.005)
-    # robot_policy = TD3(observation_space, action_space, action_space_low=[-max_action_scale, -max_action_scale],
-    #                    action_space_high=[max_action_scale, max_action_scale], gamma=0.99, lr=0.0003)
     robot_policy = TD3(observation_space, action_space, max_action=max_action_scale)
     robot.set_policy(robot_policy)
 
@@ -299,35 +302,35 @@ if __name__ == "__main__":
 
     #####PRETRAINING#####
     # Reset for pretraining
-    # env.reset()
-    # # 경험 데이터 (정답 데이터) 저장용
-    # pretrained_replay_buffer = collections.deque(maxlen=1000000)
-    #
-    # # pretrain (+ VAE) 학습
-    # # 1) Collecting Pretrain Data
-    # pretrain_env = PretrainedSimwithVAE(env, time_step)
-    #
-    # # If pretrain data exist, Get that.
-    # PRETRAIN_BUFFER_PATH = 'vae_ckpts/buffer_dict.pkl'
-    # if os.path.isfile(PRETRAIN_BUFFER_PATH):
-    #     print("Found Pretrain Data Buffer")
-    #     with open(PRETRAIN_BUFFER_PATH, 'rb') as f:
-    #         buffer_dict = pickle.load(f)
-    #     pretrain_env.set_pretrain_replay_buffer(buffer_dict["pretrain"])
-    #     pretrain_env.set_vae_state_replay_buffer(buffer_dict['vae'])
-    # else:
-    #     # 없다면 pretrain data 수집하기
-    #     for i in tqdm(range(pretrain_episodes), desc="PreTrain Data Collecting"):  # episode
-    #         pretrain_env.data_collection()
-    #     # 저장하기
-    #     pretrain_buffer = pretrain_env.get_pretrained_replay_buffer()
-    #     vae_buffer = pretrain_env.get_vae_state_replay_buffer()
-    #     buffer_dict = {"pretrain": pretrain_buffer, "vae": vae_buffer}
-    #     with open(PRETRAIN_BUFFER_PATH, 'wb') as f:
-    #         pickle.dump(buffer_dict, f)
+    env.reset()
+    # 경험 데이터 (정답 데이터) 저장용
+    pretrained_replay_buffer = collections.deque(maxlen=1000000)
+
+    # pretrain (+ VAE) 학습
+    # 1) Collecting Pretrain Data
+    pretrain_env = PretrainedSimwithVAE(env, time_step)
+
+    # If pretrain data exist, Get that.
+    PRETRAIN_BUFFER_PATH = 'vae_ckpts/buffer_dict.pkl'
+    if os.path.isfile(PRETRAIN_BUFFER_PATH):
+        print("Found Pretrain Data Buffer")
+        with open(PRETRAIN_BUFFER_PATH, 'rb') as f:
+            buffer_dict = pickle.load(f)
+        pretrain_env.set_pretrain_replay_buffer(buffer_dict["pretrain"])
+        pretrain_env.set_vae_state_replay_buffer(buffer_dict['vae'])
+    else:
+        # 없다면 pretrain data 수집하기
+        for i in tqdm(range(pretrain_episodes), desc="PreTrain Data Collecting"):  # episode
+            pretrain_env.data_collection()
+        # 저장하기
+        pretrain_buffer = pretrain_env.get_pretrained_replay_buffer()
+        vae_buffer = pretrain_env.get_vae_state_replay_buffer()
+        buffer_dict = {"pretrain": pretrain_buffer, "vae": vae_buffer}
+        with open(PRETRAIN_BUFFER_PATH, 'wb') as f:
+            pickle.dump(buffer_dict, f)
 
     # 2) CASE 1. pretrain 학습
-    # pretrain_env.pretrain(vae_model=None, pretrain_episodes=pretrain_episodes)
+    pretrain_env.pretrain(vae_model=None, pretrain_episodes=pretrain_episodes)
 
     # 2) CASE 2. Training VAE Model
     # vae_model, vae_normalizer = pretrain_env.trainVAE(input_dim=raw_observation_space,
@@ -340,7 +343,7 @@ if __name__ == "__main__":
     #####PRETRAINING Done#####
 
     # 학습된 모델 저장
-    # pretrain_env.save_model()
+    pretrain_env.save_model()
 
     print("################")
     print("Pretraining Done")

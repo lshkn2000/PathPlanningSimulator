@@ -264,7 +264,7 @@ class PretrainedSimwithVAE(object):
             dy_obstacle_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5, reverse=True)
 
             # state
-            if self.robot.is_holonomic:
+            if self.robot.cartesian:
                 state = [robot_ob] + dy_obstacle_ob
 
                 # reward
@@ -301,7 +301,7 @@ class PretrainedSimwithVAE(object):
 
             else:
                 '''
-                non holonomic 이면 주어진 월드 좌표계의 위치와 속도 데이터로 부터 로봇의 각도 변화를 계산하고 
+                polar coodinate 이면 주어진 월드 좌표계의 위치와 속도 데이터로 부터 로봇의 각도 변화를 계산하고 
                 해당 각도 변화에 대한 로봇 기준 좌표계에 대한 상태 변환 데이터와 각속도, 선속도를 구하여 상태 정보로 사용한다.
                 '''
                 # 상태 정보를 월드좌표계와 로봇 상대 좌표계로 구분하여 변경

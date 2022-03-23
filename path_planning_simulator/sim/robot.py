@@ -41,7 +41,7 @@ class Robot(Agent):
         if isinstance(action, np.ndarray):
             self.action[0] = action[0]
             self.action[1] = action[1]
-            return self.action
+            return np.array(self.action)
         else:
             print("action : ", action)
             print("action type : {}".format(type(action)))

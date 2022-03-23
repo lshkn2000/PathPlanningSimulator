@@ -397,6 +397,7 @@ class Environment(gym.Env):
 
             check_dy_obstacles_reach_goal = [0] * len(self.dy_obstacles_list)  # rvo2의 목적지 도달 확인용
             check_reach_goal_pose = [0] * len(self.dy_obstacles_list)  # rvo2의 목적지 도달 위치 기록용
+            # 장애물의 주행 경로 정보를 저장 + 로봇이 RVO2 알고리즘을 주행하는 경우의 경로 추가 저장
             for step in range(max_steps):
                 self.sim.doStep()
 
@@ -434,7 +435,7 @@ class Environment(gym.Env):
                 '''
                 if not self.answer_robot_reach_goal:
                     # 정답용 로봇 경로 저장
-                    robot_idx = len(self.dy_obstacles_list) # 장애물 세팅 후 로봇을 세팅하여서 마지막 위치가 로봇의 정보가 있다.
+                    robot_idx = len(self.dy_obstacles_list)     # 장애물 세팅 후 로봇을 세팅하여서 마지막 위치가 로봇의 정보가 있다.
                     answer_robot_pose = self.sim.getAgentPosition(robot_idx)
                     answer_robot_velocity = self.sim.getAgentVelocity(robot_idx)
                     self.answer_robot_pos_n_vel.append((*answer_robot_pose, *answer_robot_velocity))
