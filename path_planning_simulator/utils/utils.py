@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.special import erf
 
 
 def rotate2D(matrix, theta):
@@ -13,3 +14,12 @@ def rotate2D(matrix, theta):
     R = np.array([[cos, -sin], [sin, cos]])
     rotated = np.matmul(R, matrix)
     return float(rotated[0]), float(rotated[1])
+
+def gaussian_distribution(x, mu, sigma):
+    # x 는 속도 벡터의 방향에 대한 정보
+    # 확률밀도 함수
+    y = (1 / np.sqrt(2 * np.pi * sigma**2)) * np.exp(-(x-mu)**2) / (2 * sigma**2)
+    # 누적 분포 함수
+    y_cum = 0.5 * (1 + erf((x-mu)/(np.sqrt(2 * sigma**2))))
+
+    return y

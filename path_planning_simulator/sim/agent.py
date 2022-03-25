@@ -62,7 +62,8 @@ class Agent(object):
 
     @property
     def self_state_w_goal(self):
-        return self.px, self.py, self.vx, self.vy, self.gx - self.px, self.gy - self.py, self.radius
+        return self.px, self.py, self.vx, self.vy, self.gx, self.gy, self.radius
+        # return self.px, self.py, self.vx, self.vy, self.gx - self.px, self.gy - self.py, self.radius
 
     @property
     def self_state_wo_goal(self):

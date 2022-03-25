@@ -27,6 +27,24 @@ class ReplayBuffer():
 
     def store(self, sample):
         s, a, r, p, d = sample
+
+        # 자료 구조 확인
+        if not isinstance(s, np.ndarray):
+            print(f"State : {s}")
+            raise Exception("Check State Data")
+        if not isinstance(a, np.ndarray):
+            print(f"State : {a}")
+            raise Exception("Check Action Data")
+        if not (isinstance(r, float) or isinstance(r, int)):
+            print(f"Reward : {r}")
+            raise Exception("Check Reward Data")
+        if not isinstance(p, np.ndarray):
+            print(f"Next State : {p}")
+            raise Exception("Check Next State Data")
+        if d != 1 and d != 0:
+            print(f"Is Terminal : {d}")
+            raise Exception("Check Is Terminal Data")
+
         self.ss_mem[self._idx] = s
         self.as_mem[self._idx] = a
         self.rs_mem[self._idx] = r

@@ -2,7 +2,10 @@ from collections import deque
 import numpy as np
 
 from path_planning_simulator.sim.agent import Agent
+from path_planning_simulator.utils.state_function_engineering.basic_state_model import BasicState
+from path_planning_simulator.utils.state_function_engineering.grid_based_state_model import GridBasedState
 
+import time
 
 class Robot(Agent):
     def __init__(self, cartesian=True, detection_scope=float("inf"), robot_name="Robot"):
@@ -20,6 +23,8 @@ class Robot(Agent):
 
         self.detection_scope = detection_scope
 
+        self.state_function = GridBasedState() # BasicState()
+
     def act(self, ob):
         if self.policy is None:
             raise AttributeError("Need to set policy!")
@@ -29,11 +34,20 @@ class Robot(Agent):
         # 1. Dynamic Obstacle info : [(px, py, vx, vy, radius), ...]
         # 2. Static Obstacle info [(px, py, width, height)]
 
-        # set state information
+        ############## State Engineering ##############
         # Observation Customization
-        state = ob
-        # state = self.policy.lstm.custom_state_for_lstm(state)
-        # state = self.policy.featured_state(state)
+        # 1. Basic model
+        state = self.state_function.basic_state_function(ob)
+
+        # 2. Grid based model
+        # Relative Coordinate State information
+        # state = self.state_function.grid_based_state_function(ob, robot_detection_scope_radius=5, detection_scope_resolution=0.1, map_size=(10, 10))
+        # State Encoder
+
+
+        # 3. Non grid based model
+
+
 
         # Action for State
         action = self.policy.predict(state)

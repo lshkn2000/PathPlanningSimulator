@@ -10,26 +10,11 @@ import time
 from path_planning_simulator.utils.utils import *
 
 
-class Environment(gym.Env):
-    metadata = {'render.modes': ['human']}
-
-    def __init__(self, start_rvo2=True):
-
-        """
-        환경 맵 세팅(main)
-        장애물 배치(main) -> 세팅(Env) : 완료
-            동적 장애물은 원
-            정적 장애물은 사각형
-        로봇 배치(main) -> 세팅(Env) : 완료
-
-        run sim -> loop 돌면서 스텝 진행
-
-        gym wrapping
-        """
-
+class Environment(object):
+    def __init__(self, map_width, map_height, start_rvo2=True,):
         # map 크기
-        self.square_width = 10
-        self.square_height = 10
+        self.square_width = map_width
+        self.square_height = map_height
 
         # 로봇과 장애물 소환
         self.robot = None
@@ -58,7 +43,7 @@ class Environment(gym.Env):
         self.step_cnt = 0
 
         # 충돌 거리 설정
-        self.safe_distance = 1.0  # 로봇과 장애물이 소환되는 위치의 거리를 세팅
+        self.safe_distance = 2.0  # 로봇과 장애물이 소환되는 위치의 거리를 세팅
 
         # 상태 정보 설계용
         self.scailing_factor = 1
@@ -134,9 +119,8 @@ class Environment(gym.Env):
         self.step_cnt += 1
 
         # collision check btw robot and dynamic obstacle
-        '''
-        장애물 사이의 충돌은 고려하지 않음
-        '''
+        # 장애물 사이의 충돌은 고려하지 않음
+
         collision = False
         reach_goal = False
 
@@ -264,37 +248,21 @@ class Environment(gym.Env):
             done = False
             info = None
 
-        ####Assistant Model####
-        # 목적지에 도착하지 못하였을 때, 정답 로봇의 경로를 이용하여 trajectories를 생성하고 replay buffer 에 넣어준다. (성능향상을 확인하지 못함)
-        # if (collision or (self.global_time >= self.time_limit - 1) or out_of_boundary) and self.answer_robot_reach_goal:
-        #     # reset() 에서 저장한 정답 로봇 정보와 장애물 데이터를 이용하여 trajectories 생성한다.
-        #     print("Assistant work")
-        #     self.set_answer_trajectories_to_buffer()
-
         # next_step_ob
         next_robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_goal]
         # next_dy_obstacle_ob = [dy_obstacle.self_state_wo_goal for dy_obstacle in self.dy_obstacles]
         # 로봇 관점에서 로봇의 감지 범위 내에 있는 장애물들의 방향 벡터를 장애물의 위치 정보대신 사용한다.
-        next_dy_obstacle_ob = [
-                                (dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py, dy_obstacle.vx - self.robot.vx,
-                                 dy_obstacle.vy - self.robot.vy, dy_obstacle.radius) for dy_obstacle in self.dy_obstacles if
-                                pow(pow((dy_obstacle.px - self.robot.px), 2) + pow((dy_obstacle.py - self.robot.py), 2),
-                                    0.5) <= self.robot.detection_scope]
+        # next_dy_obstacle_ob = [
+        #                         (dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py, dy_obstacle.vx - self.robot.vx,
+        #                          dy_obstacle.vy - self.robot.vy, dy_obstacle.radius) for dy_obstacle in self.dy_obstacles if
+        #                         pow(pow((dy_obstacle.px - self.robot.px), 2) + pow((dy_obstacle.py - self.robot.py), 2),
+        #                             0.5) <= self.robot.detection_scope]
+        next_dy_obstacle_ob = [(dy_obstacle.px, dy_obstacle.py, dy_obstacle.vx, dy_obstacle.vy, dy_obstacle.radius) for dy_obstacle in self.dy_obstacles]
         next_st_obstacle_ob = [st_obstacle.self_state_wo_goal_rectangle for st_obstacle in self.st_obstacles]
 
         # 거리순으로 정렬 (먼 순으로)
-        next_dy_obstacle_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5,
-                                 reverse=True)
-
-        # 회전변환하여 로봇에 대한 상대좌표로 변환
-        # if 상대좌표:
-            # next_robot_ob = [(next_robot_ob[0], next_robot_ob[1],
-            #                   *rotate2D([next_robot_ob[2], next_robot_ob[3]], (np.pi / 2 - self.robot.theta)),
-            #                   next_robot_ob[4], next_robot_ob[5], next_robot_ob[6])]
-
-            # next_dy_obstacle_ob = [(*rotate2D([dy_obstacle[0], dy_obstacle[1]], (np.pi / 2 - self.robot.theta)),
-            #                         *rotate2D([dy_obstacle[2], dy_obstacle[3]], (np.pi / 2 - self.robot.theta)),
-            #                         dy_obstacle[4]) for dy_obstacle in next_dy_obstacle_ob]
+        # next_dy_obstacle_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5,
+        #                          reverse=True)
 
         next_ob = [next_robot_ob] + [next_dy_obstacle_ob] + [next_st_obstacle_ob]
 
@@ -454,26 +422,18 @@ class Environment(gym.Env):
         robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_goal]
         # dy_obstacle_ob = [dy_obstacle.self_state_wo_goal for dy_obstacle in self.dy_obstacles]
         # 로봇 관점에서 로봇의 감지 범위 내에 있는 장애물들의 방향 벡터를 장애물의 위치 정보대신 사용한다.
-        dy_obstacle_ob = [(dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py,
-                           dy_obstacle.vx - self.robot.vx, dy_obstacle.vy - self.robot.vy,
-                           dy_obstacle.radius)
-                          for dy_obstacle in self.dy_obstacles if
-                          pow(pow((dy_obstacle.px - self.robot.px), 2) + pow((dy_obstacle.py - self.robot.py), 2),
-                              0.5) <= self.robot.detection_scope]
+        # dy_obstacle_ob = [(dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py,
+        #                    dy_obstacle.vx - self.robot.vx, dy_obstacle.vy - self.robot.vy,
+        #                    dy_obstacle.radius)
+        #                   for dy_obstacle in self.dy_obstacles if
+        #                   pow(pow((dy_obstacle.px - self.robot.px), 2) + pow((dy_obstacle.py - self.robot.py), 2),
+        #                       0.5) <= self.robot.detection_scope]
+        dy_obstacle_ob = [(dy_obstacle.px, dy_obstacle.py, dy_obstacle.vx, dy_obstacle.vy, dy_obstacle.radius) for
+                               dy_obstacle in self.dy_obstacles]
         st_obstacle_ob = [st_obstacle.self_state_wo_goal_rectangle for st_obstacle in self.st_obstacles]
 
         # 멀리 있는 순으로 장애물을 정렬한다.
-        dy_obstacle_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5, reverse=True)
-
-        # 회전변환하여 로봇에 대한 상대좌표로 변환, holomonic 일때
-        # if 상대좌표:
-            # robot_ob = [(robot_ob[0], robot_ob[1],
-            #             *rotate2D([robot_ob[2], robot_ob[3]], (np.pi / 2 - self.robot.theta)),
-            #             robot_ob[4], robot_ob[5], robot_ob[6])]
-
-            # dy_obstacle_ob = [(*rotate2D([dy_obstacle[0], dy_obstacle[1]], (np.pi / 2 - self.robot.theta)),
-            #                    *rotate2D([dy_obstacle[2], dy_obstacle[3]], (np.pi / 2 - self.robot.theta)),
-            #                    dy_obstacle[4]) for dy_obstacle in dy_obstacle_ob]
+        # dy_obstacle_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5, reverse=True)
 
         ob = [robot_ob] + [dy_obstacle_ob] + [st_obstacle_ob]
 
@@ -508,14 +468,14 @@ class Environment(gym.Env):
                 # 로봇의 센서 탐지 범위는 고려하지 않았다.
                 dy_obstacle_px, dy_obstacle_py = self.dy_obstacles_positions[i][step_cnt]
                 dy_obstacle_vx, dy_obstacle_vy = self.dy_obstacles_velocities[i][step_cnt]
-                dy_obstacle_state = (dy_obstacle_px - robot_pose[0], dy_obstacle_py - robot_pose[1],
-                                     dy_obstacle_vx - robot_vel[0], dy_obstacle_vy - robot_vel[1], dy_obstacle.radius)
+                # dy_obstacle_state = (dy_obstacle_px - robot_pose[0], dy_obstacle_py - robot_pose[1],
+                #                      dy_obstacle_vx - robot_vel[0], dy_obstacle_vy - robot_vel[1], dy_obstacle.radius)
+                dy_obstacle_state = (dy_obstacle_px, dy_obstacle_py,
+                                     dy_obstacle_vx, dy_obstacle_vy, dy_obstacle.radius)
                 step_dy_obstacles_ob.append(dy_obstacle_state)
 
             # 멀리 있는 순으로 장애물을 정렬한다.
             step_dy_obstacles_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5, reverse=True)
-
-            # holonomic은 차후에 고려
 
             # 정적 장애물 제외
             ob = step_robot_ob + step_dy_obstacles_ob
@@ -536,6 +496,9 @@ class Environment(gym.Env):
             # 보상함수 처리
             reward, is_terminal = self.set_answer_reward_function(step_state)
 
+            # State Function!
+            # 여기서 상대 좌표, 상대속도 처리 또는 그리드 맵 처리 등등을 작업함
+
             # answer new_state
             new_step_dy_obstacles_ob = []
             new_robot_pose = self.answer_robot_pos_n_vel[step_cnt+1][:2]
@@ -546,15 +509,16 @@ class Environment(gym.Env):
                 # 로봇의 센서 탐지 범위는 고려하지 않았다.
                 new_dy_obstacle_px, new_dy_obstacle_py = self.dy_obstacles_positions[j][step_cnt+1]
                 new_dy_obstacle_vx, new_dy_obstacle_vy = self.dy_obstacles_velocities[j][step_cnt+1]
-                dy_obstacle_state = (new_dy_obstacle_px - new_robot_pose[0], new_dy_obstacle_py - new_robot_pose[1],
-                                     new_dy_obstacle_vx - new_robot_vel[0], new_dy_obstacle_vy - new_robot_vel[1],
+                # dy_obstacle_state = (new_dy_obstacle_px - new_robot_pose[0], new_dy_obstacle_py - new_robot_pose[1],
+                #                      new_dy_obstacle_vx - new_robot_vel[0], new_dy_obstacle_vy - new_robot_vel[1],
+                #                      new_dy_obstacle.radius)
+                dy_obstacle_state = (new_dy_obstacle_px, new_dy_obstacle_py,
+                                     new_dy_obstacle_vx, new_dy_obstacle_vy,
                                      new_dy_obstacle.radius)
                 new_step_dy_obstacles_ob.append(dy_obstacle_state)
 
             # 멀리 있는 순으로 장애물을 정렬한다.
-            new_step_dy_obstacles_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5, reverse=True)
-
-            # holonomic은 차후에 고려
+            # new_step_dy_obstacles_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5, reverse=True)
 
             # 정적 장애물 제외
             new_ob = new_step_robot_ob + new_step_dy_obstacles_ob
@@ -571,6 +535,9 @@ class Environment(gym.Env):
                 else:
                     new_state_flatten.append(item)
             new_step_state = new_state_flatten
+
+            # State Function!
+            # 여기서 상대 좌표, 상대속도 처리 또는 그리드 맵 처리 등등을 작업함
 
             # action 추출
             action = np.array(new_robot_vel)

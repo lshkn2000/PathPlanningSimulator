@@ -223,7 +223,9 @@ if __name__ == "__main__":
     make_directories("vae_ckpts")
 
     # 환경 소환
-    env = Environment(start_rvo2=True)
+    map_width = 10
+    map_height = 10
+    env = Environment(map_width, map_height, start_rvo2=True)
 
     # 환경 변수 설정
     time_step = 0.1                                         # real time 고려 한 시간 스텝 (s)
@@ -302,35 +304,35 @@ if __name__ == "__main__":
 
     #####PRETRAINING#####
     # Reset for pretraining
-    env.reset()
-    # 경험 데이터 (정답 데이터) 저장용
-    pretrained_replay_buffer = collections.deque(maxlen=1000000)
-
-    # pretrain (+ VAE) 학습
-    # 1) Collecting Pretrain Data
-    pretrain_env = PretrainedSimwithVAE(env, time_step)
-
-    # If pretrain data exist, Get that.
-    PRETRAIN_BUFFER_PATH = 'vae_ckpts/buffer_dict.pkl'
-    if os.path.isfile(PRETRAIN_BUFFER_PATH):
-        print("Found Pretrain Data Buffer")
-        with open(PRETRAIN_BUFFER_PATH, 'rb') as f:
-            buffer_dict = pickle.load(f)
-        pretrain_env.set_pretrain_replay_buffer(buffer_dict["pretrain"])
-        pretrain_env.set_vae_state_replay_buffer(buffer_dict['vae'])
-    else:
-        # 없다면 pretrain data 수집하기
-        for i in tqdm(range(pretrain_episodes), desc="PreTrain Data Collecting"):  # episode
-            pretrain_env.data_collection()
-        # 저장하기
-        pretrain_buffer = pretrain_env.get_pretrained_replay_buffer()
-        vae_buffer = pretrain_env.get_vae_state_replay_buffer()
-        buffer_dict = {"pretrain": pretrain_buffer, "vae": vae_buffer}
-        with open(PRETRAIN_BUFFER_PATH, 'wb') as f:
-            pickle.dump(buffer_dict, f)
+    # env.reset()
+    # # 경험 데이터 (정답 데이터) 저장용
+    # pretrained_replay_buffer = collections.deque(maxlen=1000000)
+    #
+    # # pretrain (+ VAE) 학습
+    # # 1) Collecting Pretrain Data
+    # pretrain_env = PretrainedSimwithVAE(env, time_step)
+    #
+    # # If pretrain data exist, Get that.
+    # PRETRAIN_BUFFER_PATH = 'vae_ckpts/buffer_dict.pkl'
+    # if os.path.isfile(PRETRAIN_BUFFER_PATH):
+    #     print("Found Pretrain Data Buffer")
+    #     with open(PRETRAIN_BUFFER_PATH, 'rb') as f:
+    #         buffer_dict = pickle.load(f)
+    #     pretrain_env.set_pretrain_replay_buffer(buffer_dict["pretrain"])
+    #     pretrain_env.set_vae_state_replay_buffer(buffer_dict['vae'])
+    # else:
+    #     # 없다면 pretrain data 수집하기
+    #     for i in tqdm(range(pretrain_episodes), desc="PreTrain Data Collecting"):  # episode
+    #         pretrain_env.data_collection()
+    #     # 저장하기
+    #     pretrain_buffer = pretrain_env.get_pretrained_replay_buffer()
+    #     vae_buffer = pretrain_env.get_vae_state_replay_buffer()
+    #     buffer_dict = {"pretrain": pretrain_buffer, "vae": vae_buffer}
+    #     with open(PRETRAIN_BUFFER_PATH, 'wb') as f:
+    #         pickle.dump(buffer_dict, f)
 
     # 2) CASE 1. pretrain 학습
-    pretrain_env.pretrain(vae_model=None, pretrain_episodes=pretrain_episodes)
+    # pretrain_env.pretrain(vae_model=None, pretrain_episodes=pretrain_episodes)
 
     # 2) CASE 2. Training VAE Model
     # vae_model, vae_normalizer = pretrain_env.trainVAE(input_dim=raw_observation_space,
@@ -343,13 +345,13 @@ if __name__ == "__main__":
     #####PRETRAINING Done#####
 
     # 학습된 모델 저장
-    pretrain_env.save_model()
+    # pretrain_env.save_model()
 
-    print("################")
-    print("Pretraining Done")
-    print("################")
+    # print("################")
+    # print("Pretraining Done")
+    # print("################")
 
     # 학습 가중치 가져오기
-    robot.policy.load('learning_data/tmp')
+    # robot.policy.load('learning_data/tmp')
 
     run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=False, seed_num=seed_num, n_warmup_batches=5)
