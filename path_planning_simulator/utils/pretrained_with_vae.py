@@ -227,7 +227,7 @@ class PretrainedSimwithVAE(object):
                             np.array(rvo2_dy_obstacle_pose) - np.array(dy_obstacle_goal)) < agent.radius + self.robot.goal_offset   # offset
 
                         if i == 0:  # robot state : px py vx vy gx gy r
-                            robot_goal_vec = (agent.goal[0] - rvo2_dy_obstacle_pose[0], agent.goal[1] - rvo2_dy_obstacle_pose[1])
+                            robot_goal_vec = (agent.goal[0], agent.goal[1])
                             self.robot_n_dy_obstacles_states[i].append(
                                 rvo2_dy_obstacle_pose + rvo2_dy_obstacle_velocity + robot_goal_vec + (agent.radius,))
                         else:       # obstacle state : px py vx vy r
@@ -256,8 +256,8 @@ class PretrainedSimwithVAE(object):
         for i, ob in enumerate(sliced_agents_states[1:-1]):
             robot_ob = ob[0]
             # 위치, 속도를 로봇 기준 상대 좌표로 변환
-            dy_obstacle_ob = [(dy_obstacle[0] - robot_ob[0], dy_obstacle[1] - robot_ob[1],
-                               dy_obstacle[2] - robot_ob[2], dy_obstacle[3] - robot_ob[3],
+            dy_obstacle_ob = [(dy_obstacle[0], dy_obstacle[1],
+                               dy_obstacle[2], dy_obstacle[3],
                                dy_obstacle[4]) for dy_obstacle in ob[1:]]
 
             # 거리순으로 정렬 (먼 순으로)
@@ -273,8 +273,8 @@ class PretrainedSimwithVAE(object):
                 # new_state
                 new_ob = sliced_agents_states[i + 1]
                 new_robot_ob = new_ob[0]
-                new_dy_obstacle_ob = [(dy_obstacle[0] - new_robot_ob[0], dy_obstacle[1] - new_robot_ob[1],
-                                       dy_obstacle[2] - new_robot_ob[2], dy_obstacle[3] - new_robot_ob[3],
+                new_dy_obstacle_ob = [(dy_obstacle[0], dy_obstacle[1],
+                                       dy_obstacle[2], dy_obstacle[3],
                                        dy_obstacle[4]) for dy_obstacle in new_ob[1:]]
 
                 # 거리순으로 정렬 (먼 순으로)
@@ -338,8 +338,8 @@ class PretrainedSimwithVAE(object):
                 new_ob = sliced_agents_states[i+1]
                 new_robot_ob = new_ob[0]
 
-                new_dy_obstacle_ob = [(dy_obstacle[0] - new_robot_ob[0], dy_obstacle[1] - new_robot_ob[1],
-                                       dy_obstacle[2] - new_robot_ob[2], dy_obstacle[3] - new_robot_ob[3],
+                new_dy_obstacle_ob = [(dy_obstacle[0], dy_obstacle[1],
+                                       dy_obstacle[2], dy_obstacle[3],
                                        dy_obstacle[4]) for dy_obstacle in new_ob[1:]]
 
                 # 거리순으로 정렬 (먼 순으로)

@@ -23,7 +23,6 @@ class LSTM(nn.Module):
 		output, (hn, cn) = self.init_lstm(x, (hidden, cell))
 		output = hn[0]
 
-
 		return output
 
 # model = LSTM(input_dim=5, output_dim= 20, hidden_dim=10, num_layers=2)

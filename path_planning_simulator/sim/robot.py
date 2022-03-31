@@ -1,14 +1,36 @@
 from collections import deque
 import numpy as np
+import torch
 
 from path_planning_simulator.sim.agent import Agent
 from path_planning_simulator.utils.state_function_engineering.basic_state_model import BasicState
 from path_planning_simulator.utils.state_function_engineering.grid_based_state_model import GridBasedState
+# from path_planning_simulator.utils.world_model.convolution import CNNModel # gridmap 을 위해서 만드는 중이다. 이건 CNNVAE에 적용하기 위함
 
-import time
+
+device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
+
 
 class Robot(Agent):
-    def __init__(self, cartesian=True, detection_scope=float("inf"), robot_name="Robot"):
+    def __init__(self, cartesian=True, detection_scope=float("inf"), robot_name="Robot", state_engineering="Basic"):
+        """
+        :param cartesian:
+                Robot moves according to cartesian coordinate,
+            else :
+                Polar coodrinate
+        :param detection_scope:
+            Range that robot detect obstacles
+        :param robot_name:
+            Info about robot name to distinguish other agents
+        :param state_engineering:
+            [Basic, GridMap, NonGridMap]
+            if Basic :
+                robot get relative positions and velocities about obstacles,
+            elif GridMap:
+                robot get information images about obstacles
+            elif NonGridMap:
+                robot get graph information about obstacles
+        """
         super(Robot, self).__init__()
         self.name = robot_name
 
@@ -23,31 +45,56 @@ class Robot(Agent):
 
         self.detection_scope = detection_scope
 
-        self.state_function = GridBasedState() # BasicState()
+        self.state_engineering = state_engineering
+
+        if self.state_engineering == "Basic":
+            self.state_function = BasicState()
+        elif self.state_engineering == "GridMap":
+            self.state_function = GridBasedState()
+        # elif self.state_engineering == "NonGridMap":
+        #     self.state_function = NonGridBasedState()
+        self.test_state = BasicState()
+
+        # self.cnn_model = CNNModel()
 
     def act(self, ob):
         if self.policy is None:
             raise AttributeError("Need to set policy!")
-
-        # 로봇이 받는 상태정보는 3가지의 리스트로 구성되어있다
-        # 0. Robot info : [px, py, vx, vy, gx, gy, radius]
-        # 1. Dynamic Obstacle info : [(px, py, vx, vy, radius), ...]
-        # 2. Static Obstacle info [(px, py, width, height)]
+        """
+        Robot Observation constructed with 3 categories 
+        0. Robot info : [px, py, vx, vy, gx, gy, radius]
+        1. Dynamic Obstacle info : [(px, py, vx, vy, radius), ...]
+        2. Static Obstacle info [(px, py, width, height)]
+        """
+        state = ob
+        ob_length = ob.size
+        print(f"before state : {state}")
 
         ############## State Engineering ##############
         # Observation Customization
         # 1. Basic model
-        state = self.state_function.basic_state_function(ob)
+        if self.state_engineering == "Basic":
+            state = self.state_function.basic_state_function(ob)
+            # State Encoder
 
         # 2. Grid based model
-        # Relative Coordinate State information
-        # state = self.state_function.grid_based_state_function(ob, robot_detection_scope_radius=5, detection_scope_resolution=0.1, map_size=(10, 10))
-        # State Encoder
+        # Relative Coordinate State information with image
+        elif self.state_engineering == "GridMap":
+            state = self.state_function.grid_based_state_function(ob, robot_detection_scope_radius=2.5,
+                                                                  detection_scope_resolution=0.1, map_size=(10, 10))
+            # State Encoder
+            # state_img = np.array([state])
+            # torched_state = torch.flip(torch.from_numpy(state_img), dims=(0,))
+            # torched_state = torch.tensor(torched_state, dtype=torch.float32)
+            # torched_state = torched_state.view(-1, 1, state.shape[0], state.shape[1])
+            # self.cnn_model.model_setting((state.shape[0], state.shape[1]), [256, 128], ob_length, 1, 10)
+            # state = self.cnn_model(torched_state).to(device)
 
 
         # 3. Non grid based model
-
-
+        # elif self.state_engineering == "NonGridMap":
+        #     self.state_function = NonGridBasedState()
+        #     # State Encoder
 
         # Action for State
         action = self.policy.predict(state)

@@ -9,11 +9,16 @@ class GridBasedState():
 
     def grid_based_state_function(self, ob, robot_detection_scope_radius, detection_scope_resolution, map_size):
         """
-        :param ob: robot : [px, py, vx, vy, gx, gy, radius] + obstacles : [px, py, vx, vy, radius]
-        :param robot_detection_scope_radius: 로봇이 장애물을 인식하는 탐지 반경 (m)
-        :param detection_scope_resolution : grid map의 resolution, 작을수록 더 세밀함. 0.1 = 0.1 m 단위 분해능
+        :param ob: robot :
+            [px, py, vx, vy, gx, gy, radius] + obstacles : [px, py, vx, vy, radius]
+        :param robot_detection_scope_radius:
+            로봇이 장애물을 인식하는 탐지 반경 (m)
+        :param detection_scope_resolution :
+            grid map의 resolution, 작을수록 더 세밀함. 0.1 = 0.1 m 단위 분해능
         :param map_size: 맵의 크기 (m)
-        :return: grid map image를 출력한다.
+        :return:
+            grid map image를 출력한다.
+             img size width, height = (robot_detection_scope_radisu * 2) / detection_scope_resolution + 1
         """
         # Set scopping condition
         if robot_detection_scope_radius <= 0:
@@ -73,27 +78,28 @@ class GridBasedState():
         gmap, minx, maxx, miny, maxy = self.gaussian_grid_map(scoped_obstacles_position, grid_map_size, xyresolution=detection_scope_resolution, std=[0.5, 0.5])
         # self.grid_heatmap_logs.append(gmap)
 
+        rot_gmap = np.rot90(gmap, 1)  # cw rotation # left_top 이 (0,0) 이므로 image frame 에 맞추는 작업
 
         ###### PLOT ######
-        plt.cla()
-        plt.ioff() # 계속 그리는 작업을 중단하고 plt.show() 일때 전체 업데이트 해서 보여줌 <--> plt.ion() : 디폴트
-        plt.gcf().canvas.mpl_connect('key_release_event',
-                                     lambda event: [exit(0) if event.key == 'escape' else None])
-        plt.rcParams["figure.figsize"] = map_size
+        # plt.cla()
+        # plt.ioff() # 계속 그리는 작업을 중단하고 plt.show() 일때 전체 업데이트 해서 보여줌 <--> plt.ion() : 디폴트
+        # plt.gcf().canvas.mpl_connect('key_release_event',
+        #                              lambda event: [exit(0) if event.key == 'escape' else None])
+        # plt.rcParams["figure.figsize"] = map_size
+        #
+        # # 시각화
+        # self.draw_heatmap(robot_position, gmap, minx, maxx, miny, maxy, xyresolution=detection_scope_resolution)
+        #
+        # # 모든 장애물의 world coord 위치 표시
+        # for obstacle_position in total_obstacles_position:
+        #     plt.plot(obstacle_position[0], obstacle_position[1], 'ob')
+        # # 좌표계 선택에 따른 표현 방법
+        # plt.plot(robot_goal[0] - robot_position[0], robot_goal[1] - robot_position[1], 'or')
+        # plt.plot(0, 0, "og") # 로봇이 기준
+        # # plt.pause(0.1) # 해당시간만큼 이미지를 보여주고 꺼짐
+        # plt.show()  # 계속 이미지를 보여줌
 
-        # 시각화
-        self.draw_heatmap(robot_position, gmap, minx, maxx, miny, maxy, xyresolution=detection_scope_resolution)
-
-        # 모든 장애물의 world coord 위치 표시
-        for obstacle_position in total_obstacles_position:
-            plt.plot(obstacle_position[0], obstacle_position[1], 'ob')
-        # 좌표계 선택에 따른 표현 방법
-        plt.plot(robot_goal[0] - robot_position[0], robot_goal[1] - robot_position[1], 'or')
-        plt.plot(0, 0, "og") # 로봇이 기준
-        # plt.pause(0.1) # 해당시간만큼 이미지를 보여주고 꺼짐
-        plt.show()  # 계속 이미지를 보여줌
-
-        return gmap
+        return rot_gmap
 
     def gaussian_grid_map(self, obstacles_positions, grid_map_size, xyresolution, std):
         # map size 가 NxN의 정사각형을 가정

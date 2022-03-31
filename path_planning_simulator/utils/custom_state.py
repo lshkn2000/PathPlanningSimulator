@@ -6,6 +6,7 @@ from path_planning_simulator.utils.lstm import LSTM
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
+
 class FeaturedLSTM:
     def __init__(self, input_dim=5, output_dim=10+7, hidden_dim=30, num_layers=1):
         self.lstm = LSTM(input_dim=input_dim, output_dim=output_dim - 7, hidden_dim=hidden_dim - 7, num_layers=num_layers)
