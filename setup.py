@@ -15,4 +15,6 @@ setup(name='PathPlanningSimulator',
                         'tensorboard',
                         'tqdm',
                         'sklearn',
-                        'pytorch_lightning'])
+                        'pytorch_lightning',
+                        'cma',
+                        'opencv-python'])

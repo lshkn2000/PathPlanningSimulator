@@ -1,4 +1,5 @@
 import itertools
+import numpy as np
 
 
 class BasicState():
@@ -39,7 +40,7 @@ class BasicState():
             else:
                 state_flatten.append(item)
 
-        return state_flatten
+        return np.array(state_flatten)
 
 
 

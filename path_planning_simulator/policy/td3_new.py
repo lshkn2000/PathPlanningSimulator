@@ -160,7 +160,6 @@ class TD3(object):
         # self.featured_state = FeaturedState(batch_size=batch_size)
         # self.featured_state_optimizer = torch.optim.Adam(self.featured_state.parameters(), lr=3e-4)
 
-
         self.replay_buffer = ReplayBuffer(max_size=100000, batch_size=batch_size)
 
         self.actor = Actor(input_dim, action_dim, max_action).to(device)
