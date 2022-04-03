@@ -5,7 +5,7 @@ import torch
 from path_planning_simulator.sim.agent import Agent
 from path_planning_simulator.utils.state_function_engineering.basic_state_model import BasicState
 from path_planning_simulator.utils.state_function_engineering.grid_based_state_model import GridBasedState
-# from path_planning_simulator.utils.world_model.convolution import CNNModel # gridmap 을 위해서 만드는 중이다. 이건 CNNVAE에 적용하기 위함
+# from path_planning_simulator.utils.world_model.VAE import CNNModel # gridmap 을 위해서 만드는 중이다. 이건 CNNVAE에 적용하기 위함
 
 
 device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')

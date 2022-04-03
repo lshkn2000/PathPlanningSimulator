@@ -93,12 +93,12 @@ class VanilaVAE(pl.LightningModule):
         return x_hat, loss
 
     def validation_epoch_end(self, outputs):
-        if not os.path.exists('vae_images'):
-            os.makedirs('vae_images')
+        if not os.path.exists('test_img'):
+            os.makedirs('test_img')
         choice = random.choice(outputs) # choose random batch from outputs
         output_sample = choice[0]
         output_sample = output_sample.reshape(-1, 1, 28, 28)
-        save_image(output_sample, f'./vae_images/test.png')
+        save_image(output_sample, f'test_img/test.png')
 
     def test_step(self, batch, batch_idx):
         x, y = batch
