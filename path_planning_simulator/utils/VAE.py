@@ -205,7 +205,7 @@ class VAEEXE(pl.LightningModule):
 #
 #     # RVO simulation Dataset # training_step과 validation_step에서 x = batch 를 사용해야 함.
 #     # If pretrain data exist, Get that.
-#     PRETRAIN_BUFFER_PATH = '../vae_ckpts/buffer_dict.pkl'
+#     PRETRAIN_BUFFER_PATH = '../vae_ckpts/simulation_buffer_dict.pkl'
 #     if os.path.isfile(PRETRAIN_BUFFER_PATH):
 #         print("Found Pretrain Data Buffer")
 #         with open(PRETRAIN_BUFFER_PATH, 'rb') as f:

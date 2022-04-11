@@ -254,6 +254,8 @@ class PretrainedSimwithVAE(object):
 
         # transform log data for offline learning
         for i, ob in enumerate(sliced_agents_states[1:-1]):
+            if i > 60:  # cuttting out of 64 frames
+                break
             robot_ob = ob[0]
             # 위치, 속도를 로봇 기준 상대 좌표로 변환
             dy_obstacle_ob = [(dy_obstacle[0], dy_obstacle[1],
@@ -261,7 +263,7 @@ class PretrainedSimwithVAE(object):
                                dy_obstacle[4]) for dy_obstacle in ob[1:]]
 
             # 거리순으로 정렬 (먼 순으로)
-            dy_obstacle_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5, reverse=True)
+            # dy_obstacle_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5, reverse=True)
 
             # state
             if self.robot.cartesian:
@@ -278,7 +280,7 @@ class PretrainedSimwithVAE(object):
                                        dy_obstacle[4]) for dy_obstacle in new_ob[1:]]
 
                 # 거리순으로 정렬 (먼 순으로)
-                new_dy_obstacle_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5, reverse=True)
+                # new_dy_obstacle_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5, reverse=True)
 
                 new_state = [new_robot_ob] + new_dy_obstacle_ob
 

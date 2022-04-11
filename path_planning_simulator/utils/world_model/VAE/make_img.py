@@ -7,7 +7,7 @@ import cv2
 
 """
 World Model 학습
-실행 순서는 make_img -> make_img_dataset -> cnn_vae_train
+실행 순서는 make_img -> make_img_dataset -> train_cnn_vae
 시뮬레이션의 정보를 바탕으로 이미지 만드는 파일이다. 
 """
 
@@ -63,8 +63,8 @@ def main():
     transformer = TransformMeter2Pixel(map_size, pixel_size)
 
     # RVO2로 얻은 dataset 가져오기
-    PATH = r'/home/huni/PathPlanningSimulator_new_worldcoord/path_planning_simulator'
-    PRETRAIN_BUFFER_PATH = os.path.join(PATH,'vae_ckpts/buffer_dict.pkl')
+    PATH = r'/home/rvlab/PathPlanningSimulator_branch/PathPlanningSimulator_new_worldcoord_2/path_planning_simulator'
+    PRETRAIN_BUFFER_PATH = os.path.join(PATH,'vae_ckpts/simulation_buffer_dict.pkl')
 
     # 이미지 데이터셋 저장할 장소 지정
     IMG_DATASET_PATH = os.path.join(PATH, 'vae_ckpts/img_dataset')

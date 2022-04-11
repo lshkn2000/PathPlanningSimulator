@@ -236,7 +236,7 @@ if __name__ == "__main__":
     seed_num = 1
     action_noise = 0.1
 
-    pretrain_episodes = 5000
+    pretrain_episodes = 1000
 
     # vae hyperparameter
     vae_hparameter = {"max_epochs": 10, "learning_rate": 0.002, "kld_weight":0.0001, "batch_size": 64}
@@ -313,7 +313,7 @@ if __name__ == "__main__":
     pretrain_env = PretrainedSimwithVAE(env, time_step)
 
     # If pretrain data exist, Get that.
-    PRETRAIN_BUFFER_PATH = 'vae_ckpts/buffer_dict.pkl'
+    PRETRAIN_BUFFER_PATH = 'vae_ckpts/simulation_buffer_dict.pkl'
     if os.path.isfile(PRETRAIN_BUFFER_PATH):
         print("Found Pretrain Data Buffer")
         with open(PRETRAIN_BUFFER_PATH, 'rb') as f:

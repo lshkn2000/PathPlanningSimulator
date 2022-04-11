@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,16 +7,17 @@ from path_planning_simulator.utils.world_model.const import *
 
 device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
+oneDivSqrtTwoPI = 1.0 / np.sqrt(2.0*np.pi) # normalization factor for Gaussians
+
 
 class MDNLSTM(nn.Module):
-    def __init__(self, z_size, sequence_length, n_lstm_hidden, n_gaussians=5, n_layers=1):
+    def __init__(self, z_size, n_lstm_hidden, n_gaussians=5, n_layers=1):
         super(MDNLSTM, self).__init__()
 
         self.z_size = z_size        # input size
         self.n_lstm_hidden = n_lstm_hidden
         self.n_gaussians = n_gaussians
         self.n_layer = n_layers
-        self.sequence_length = sequence_length
 
         # Encoding
         self.lstm = nn.LSTM(z_size, n_lstm_hidden, n_layers, batch_first=True)    # input_dim, hidden_dim, num_layer
@@ -34,30 +36,31 @@ class MDNLSTM(nn.Module):
         return hidden, cell
 
     def get_mixture_distribution(self, y):
-        rollout_length = y.size(1)      # y : [batch_size, sequence_length, hidden_size]
+        sequence_length = y.size(1)      # y : [batch_size, sequence_length, hidden_size]
         pi = self.z_pi(y)
         mu = self.z_mu(y)
         logsigma = self.z_logsigma(y)
 
-        pi = pi.view(-1, rollout_length, self.n_gaussians, self.z_size)
-        mu = mu.view(-1, rollout_length, self.n_gaussians, self.z_size)
-        logsigma = logsigma.view(-1, rollout_length, self.n_gaussians, self.z_size)
+        pi = pi.view(-1, sequence_length, self.n_gaussians, self.z_size)
+        mu = mu.view(-1, sequence_length, self.n_gaussians, self.z_size)
+        logsigma = logsigma.view(-1, sequence_length, self.n_gaussians, self.z_size)
 
         pi = F.softmax(pi, 2)
         sigma = torch.exp(logsigma)
         return pi, mu, sigma
 
-    def forward(self, x, hidden):
+    def forward(self, x, h):
         # input : [batch_size, sequence_length, input_size]
-        self.lstm.flatten_parameters()
-
-        pred_z, (h, c) = self.lstm(x, hidden)     # pred_z (=output) : [batch_size, sequence_length, hidden_size]
+        # self.lstm.flatten_parameters()
+        # h0, c0 = self.init_hidden(x)
+        pred_z, (h, c) = self.lstm(x, h)     # pred_z (=output) : [batch_size, sequence_length, hidden_size]
         pi, mu, sigma = self.get_mixture_distribution(pred_z)
         return (pi, mu, sigma), (h, c)     # (hidden, cell)
 
-    def mdn_loss_function(self, pi, mu, sigma, y):
+    def mdn_loss_function(self, pi, sigma, mu, y):
         # pi, mu, sigma : predict / y : target
         y = y.unsqueeze(2)
+        # print(f"mu : {mu} \n sigma : {sigma}")
         m = torch.distributions.Normal(loc=mu, scale=sigma)
         loss = torch.exp(m.log_prob(y))
         loss = torch.sum(loss * pi, dim=2)

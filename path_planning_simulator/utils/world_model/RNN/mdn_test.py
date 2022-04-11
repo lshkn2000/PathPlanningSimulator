@@ -109,6 +109,8 @@ pi_data = pi_variable.data.numpy()
 sigma_data = sigma_variable.data.numpy()
 mu_data = mu_variable.data.numpy()
 
+print(pi_data.shape)
+
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True, figsize=(8,8))
 ax1.plot(x_test_data, pi_data)
 ax1.set_title('$\Pi$')

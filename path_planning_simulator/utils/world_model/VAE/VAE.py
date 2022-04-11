@@ -89,8 +89,8 @@ class ConvVAE(nn.Module):
         recon_x = self.decode(z)
         return recon_x, mu, logsigma, z
 
-    def loss_function(self, recon_x, x, mu, logsigma, kld_weight):
-        BCE = F.binary_cross_entropy(recon_x, x, reduction='sum')
+    def loss_function(self, recon_x, x, mu, logsigma):
+        BCE = F.binary_cross_entropy(recon_x, x, size_average=False)
         # BCE = F.mse_loss(recon_x, x, size_average=False)
 
         # see Appendix B from VAE paper:
