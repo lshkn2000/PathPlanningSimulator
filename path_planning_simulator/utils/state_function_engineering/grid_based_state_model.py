@@ -5,6 +5,9 @@ from matplotlib import pyplot as plt
 import matplotlib.patches as patches
 import cv2
 
+BLUE = (255, 0, 0)
+GREEN = (0, 255, 0)
+RED = (0, 0, 255)
 
 class GridBasedState():
     def __init__(self, is_relative=False):
@@ -84,184 +87,110 @@ class GridBasedState():
             scoped_obstacles_position = np.array([])
             obstacle_pose_with_info = None
 
-        start_gaussian = time.time()
-        gmap, minx, maxx, miny, maxy = self.gaussian_grid_map(scoped_obstacles_position, grid_map_size,
-                                                              xyresolution=detection_scope_resolution, std=[0.5, 0.5])
-        print(f"gaussian time : {time.time() - start_gaussian}")
-        # self.grid_heatmap_logs.append(gmap)
+        start_opencv = time.time()
 
-        rot_gmap = np.rot90(gmap, 1)  # cw rotation # left_top 이 (0,0) 이므로 image frame 에 맞추는 작업
+        # Drawing obstacle in OpenCV
+        transformed_robot_position, tranformed_scale = self.get_cv2_coord_transform(np.array([robot_position]),
+                                                                                    plot_size_real_val=(10, 10),
+                                                                                    opencv_plot_size_pixel_val=(256, 256))
+        transformed_robot_size = (robot_size * tranformed_scale).astype(np.uint8)
 
-        ###### PLOT ######
-        start_plot = time.time()
-        # plt.cla()
-        # plt.ioff() # 계속 그리는 작업을 중단하고 plt.show() 일때 전체 업데이트 해서 보여줌 <--> plt.ion() : 디폴트
-        # plt.gcf().canvas.mpl_connect('key_release_event',
-        #                              lambda event: [exit(0) if event.key == 'escape' else None])
-        # plt.rcParams["figure.figsize"] = map_size
-        # plt.axis([minx, maxx, miny, maxy])
+        # end point of velocity vector
+        transformed_robot_velocity, _ = self.get_cv2_coord_transform(np.array([robot_velocity]),
+                                                                  plot_size_real_val=(10, 10),
+                                                                  opencv_plot_size_pixel_val=(256, 256))
 
-        # 시각화
-        # f, ax = self.draw_heatmap(gmap, minx, maxx, miny, maxy, xyresolution=detection_scope_resolution)
-        f, ax = self.draw_map(minx, maxx, miny, maxy)
+        transformed_robot_goal, _ = self.get_cv2_coord_transform(np.array([robot_goal]),
+                                                              plot_size_real_val=(10, 10),
+                                                              opencv_plot_size_pixel_val=(256, 256))
+        transformed_robot_goal_threshold = int(0.3 * tranformed_scale)
 
-        print(f"plot time : {time.time() - start_plot}")
+        tranformed_obstacles_position, _ = self.get_cv2_coord_transform(total_obstacles_position_velocity[:, 0:2],
+                                                                        plot_size_real_val=(10, 10),
+                                                                        opencv_plot_size_pixel_val=(256, 256))
 
-        start_drawing_ob = time.time()
-        # 모든 장애물의 world coord 위치 표시
-        for obstacle_info in total_obstacles_position_velocity:
-            # position x, y and velocity x, y
-            ax.plot(obstacle_info[0], obstacle_info[1], 'ob')
-            # add obstacle circle
-            ob_vel_length = np.sqrt(obstacle_info[2] ** 2 + obstacle_info[3] ** 2)  # velocity wedge length
-            ob_vel_angle = np.arctan2(obstacle_info[3], obstacle_info[2])   # velocity angle
-            if ob_vel_angle < 0:
-                ob_vel_angle = 2 * np.pi + ob_vel_angle
+        # end point of velocity vector
+        tranformed_obstacles_velocitiy, _ = self.get_cv2_coord_transform(total_obstacles_position_velocity[:, 2:4],
+                                                                         plot_size_real_val=(10, 10),
+                                                                         opencv_plot_size_pixel_val=(256, 256))
+        tranformed_obstacles_velocitiy -= int(256/2) # opencv_plot_size_pixel_val / 2. for calculate length
+        tranformed_obstacles_radius = (total_obstacles_position_velocity[:, -1] * tranformed_scale).astype(np.uint8).reshape(-1, 1)
 
-            # if robot in obstacle velocity length range, change color
-            ob_vel_angle_range = np.pi / 3
-            distance_btw_robot_obstacle = np.sqrt((robot_position[0] - obstacle_info[0]) ** 2 +
-                                                  (robot_position[1] - obstacle_info[1]) ** 2)
-            relative_angle_btw_robot_obstacle = np.arctan2(robot_position[1]-obstacle_info[1],
-                                                           robot_position[0]-obstacle_info[0])
-            if relative_angle_btw_robot_obstacle < 0:
-                relative_angle_btw_robot_obstacle = 2 * np.pi + relative_angle_btw_robot_obstacle
-            if ob_vel_length > distance_btw_robot_obstacle - robot_size and \
-                    (ob_vel_angle - ob_vel_angle_range < relative_angle_btw_robot_obstacle < ob_vel_angle + ob_vel_angle_range):
-                face_color = 'tomato'
-            else:
-                face_color = 'lightblue'
+        map = np.zeros((256, 256, 3), np.uint8)
 
-            ax.add_patch(
-                patches.Wedge(
-                    (obstacle_info[0], obstacle_info[1]),
-                    r=ob_vel_length,
-                    theta1=np.rad2deg(ob_vel_angle - ob_vel_angle_range),
-                    theta2=np.rad2deg(ob_vel_angle + ob_vel_angle_range),
-                    edgecolor='aqua',
-                    facecolor=face_color,
-                    alpha=0.8,
-                )
-            )
-            ax.add_patch(
-                patches.Circle(
-                    (obstacle_info[0], obstacle_info[1]),
-                    radius=obstacle_info[4],
-                    facecolor='blue'
-                )
-            )
-        # 좌표계 선택에 따른 표현 방법
-        if self.is_relative:
-            # add goal, robot position
-            ax.plot(robot_goal[0] - robot_position[0], robot_goal[1] - robot_position[1], 'or')
-            ax.plot(0, 0, "og")  # 로봇이 기준
-            # add velocity arrow
-            ax.add_patch(
-                patches.Arrow(
-                    0, 0,
-                    robot_velocity[0], robot_velocity[1],
-                    width=0.3,
-                    edgecolor='deeppink',
-                    facecolor='tomato'
-                ))
-            ax.add_patch(
-                patches.Circle(
-                    (0, 0),
-                    radius=robot_size,
-                    facecolor='green'
-                )
-            )
-            ax.add_patch(
-                patches.Circle(
-                    (robot_goal[0] - robot_position[0], robot_goal[1] - robot_position[1]),
-                    radius=0.3,
-                    facecolor='red',
-                    alpha=0.6,
-                )
-            )
-        else:
-            # add goal, robot position
-            ax.plot(robot_goal[0], robot_goal[1], 'or')
-            ax.plot(robot_position[0], robot_position[1], "og")
-            # add velocity arrow
-            ax.add_patch(
-                patches.Arrow(
-                    robot_position[0], robot_position[1],
-                    robot_velocity[0], robot_velocity[1],
-                    width=0.3,
-                    edgecolor='deeppink',
-                    facecolor='tomato',
-                ))
-            ax.add_patch(
-                patches.Circle(
-                    (robot_position[0], robot_position[1]),
-                    radius=robot_size,
-                    facecolor='green'
-                )
-            )
-            ax.add_patch(
-                patches.Circle(
-                    (robot_goal[0], robot_goal[1]),
-                    radius=0.3,
-                    facecolor='red',
-                    alpha=0.6,
-                )
-            )
+        for obst_posi_n_rad in zip(tranformed_obstacles_position, tranformed_obstacles_radius):
+            map = cv2.circle(map, obst_posi_n_rad[0], obst_posi_n_rad[1].item(), GREEN, -1)
 
-        # grid hold
-        ax.set(xlim=(minx, maxx), ylim=(miny, maxy))
-        # plt.pause(0.1) # 해당시간만큼 이미지를 보여주고 꺼짐
-        # plt.show()  # 계속 이미지를 보여줌
-        print(f"drawing obstacle time : {time.time() - start_drawing_ob}")
+        # Draw velocity range and warning sign
+        # failed to drawing...
+        # for ob_posi_n_vel in zip(tranformed_obstacles_position, tranformed_obstacles_velocitiy):
+        #     #
+        #     ob_posi = ob_posi_n_vel[0]
+        #     ob_vel = ob_posi_n_vel[1]
+        #     obst_vel_length = np.sqrt(ob_vel[0] ** 2 + ob_vel[1] ** 2)  # velocity wedge length
+        #     ob_vel_angle = np.arctan2(ob_vel[1], ob_vel[0])  # velocity angle
+        #     if ob_vel_angle < 0:
+        #         ob_vel_angle = 2 * np.pi + ob_vel_angle
+        #
+        #     # if robot in obstacle velocity length range, change color
+        #     ob_vel_angle_range = np.pi / 3
+        #     distance_btw_robot_obstacle = np.sqrt((int(transformed_robot_position[0][0]) - int(ob_posi[0])) ** 2 +
+        #                                           (int(transformed_robot_position[0][1]) - int(ob_posi[1])) ** 2)
+        #     relative_angle_btw_robot_obstacle = np.arctan2(int(transformed_robot_position[0][1])-int(ob_posi[1]),
+        #                                                    int(transformed_robot_position[0][0])-int(ob_posi[0]))
+        #     if relative_angle_btw_robot_obstacle < 0:
+        #         relative_angle_btw_robot_obstacle = 2 * np.pi + relative_angle_btw_robot_obstacle
+        #     if obst_vel_length > distance_btw_robot_obstacle - transformed_robot_size and \
+        #             (ob_vel_angle - ob_vel_angle_range < relative_angle_btw_robot_obstacle < ob_vel_angle + ob_vel_angle_range):
+        #         face_color = (0, 150, 150)
+        #     else:
+        #         face_color = (0, 200, 0)
+        #
+        #     start_angle = np.rad2deg(ob_vel_angle - ob_vel_angle_range)
+        #     end_angle = np.rad2deg(ob_vel_angle + ob_vel_angle_range)
+        #
+        #     map = cv2.ellipse(map, (ob_posi[0], ob_posi[1]), (int(obst_vel_length), int(obst_vel_length)), 0, int(start_angle), int(end_angle), face_color, -1)
 
-        return rot_gmap, (f, ax)
 
-    def gaussian_grid_map(self, obstacles_positions, grid_map_size, xyresolution, std, *args):
+        # Draw robot and target
+        map = cv2.circle(map, transformed_robot_position[0], transformed_robot_size.item(), RED, -1)
+        map = cv2.circle(map, transformed_robot_goal[0], transformed_robot_goal_threshold, BLUE, -1)
+        # failed to drawing
+        # map = cv2.arrowedLine(map, transformed_robot_position[0], transformed_robot_position[0] + transformed_robot_velocity[0], RED, 3)
+
+        # print("end time : {}".format(time.time() - start_opencv))
+        # cv2.imshow('test', map)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+        # exit()
+
+        return map
+
+    def get_cv2_coord_transform(self, obstacles_positions, plot_size_real_val=(10, 10), opencv_plot_size_pixel_val=(256, 256)):
         # map size 가 NxN의 정사각형을 가정
-        minx = -round(grid_map_size / 2)
-        maxx = round(grid_map_size / 2)
-        miny = -round(grid_map_size / 2)
-        maxy = round(grid_map_size / 2)
+        minx = -round(plot_size_real_val[0] / 2)
+        maxx = round(plot_size_real_val[0] / 2)
+        miny = -round(plot_size_real_val[1] / 2)
+        maxy = round(plot_size_real_val[1] / 2)
 
-        xw = int(round((maxx - minx) / xyresolution))
-        yw = int(round((maxy - miny) / xyresolution))
+        scale = opencv_plot_size_pixel_val[0] / plot_size_real_val[0]
 
-        xyreso = xyresolution
+        pts1 = np.float32([[minx, maxy], [minx, miny], [maxx, miny], [maxx, maxy]])
+        pts2 = np.float32([[0, 0],
+                           [0, opencv_plot_size_pixel_val[1]],
+                           [opencv_plot_size_pixel_val[0], opencv_plot_size_pixel_val[1]],
+                           [opencv_plot_size_pixel_val[0], 0]])
 
-        # gmap = [[0.0 for i in range(yw)] for i in range(xw)]
-        x, y = np.mgrid[slice(minx - xyreso / 2.0, maxx + xyreso / 2.0, xyreso), slice(miny - xyreso / 2.0, maxy + xyreso / 2.0, xyreso)]
-        xy = np.column_stack([x.ravel(), y.ravel()])
+        map_to_opencv_M = cv2.getPerspectiveTransform(pts1, pts2)
 
-        gaussian_list = []
-        for obstacle_position in obstacles_positions:
-            k = multivariate_normal(mean=obstacle_position, cov=np.array(std))
-            gaussian_list.append(k)
+        # make matrix for transpose
+        transpose_maxtrix_one_value_ = np.ones((len(obstacles_positions), 1))
+        obstacles_positions = np.hstack((obstacles_positions, transpose_maxtrix_one_value_))
+        obstacles_positions = obstacles_positions.transpose()
 
-        if gaussian_list:
-            z = np.array(sum(item.pdf(xy) for item in gaussian_list))
-        else:
-            z = np.array([])
-
-        if z.size != 0:
-            gmap = z.reshape((x.shape[0], y.shape[0]))
-        else:
-            gmap = np.zeros((x.shape[0], y.shape[0]))
-
-        return gmap, minx, maxx, miny, maxy
-
-    def draw_heatmap(self, data, minx, maxx, miny, maxy, xyresolution):
-        xyreso = xyresolution
-
-        x, y = np.mgrid[slice(minx - xyreso / 2.0, maxx + xyreso / 2.0, xyreso), slice(miny - xyreso / 2.0, maxy + xyreso / 2.0, xyreso)]
-
-        f, ax = plt.subplots(figsize=(maxx-minx, maxy-miny))
-        ax.pcolor(x, y, data, vmax=1.0, cmap=plt.cm.Blues)
-        ax.axis("equal")
-
-        return f, ax
-
-    def draw_map(self, minx, maxx, miny, maxy):
-        f, ax = plt.subplots(figsize=(maxx-minx, maxy-miny))
-        ax.axis("equal")
-        return f, ax
-
+        # transpose
+        transposed_obstacles_positions = np.matmul(map_to_opencv_M, obstacles_positions).transpose()
+        #
+        transposed_obstacles_positions = np.delete(transposed_obstacles_positions, -1, axis=1)   # delete np column
+        transposed_obstacles_positions = transposed_obstacles_positions.astype(np.uint8)
+        return transposed_obstacles_positions, scale

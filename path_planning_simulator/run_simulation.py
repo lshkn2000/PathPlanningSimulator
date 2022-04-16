@@ -6,6 +6,8 @@ import time
 import datetime
 import pickle
 import collections
+import cv2
+import torchvision.utils
 from PIL import Image
 import matplotlib.pyplot as plt
 
@@ -55,8 +57,6 @@ def make_directories(path):
 
 ###############################################################################################
 
-
-
 def run_sim(env, max_episodes=1, max_step_per_episode=100, render=False, seed_num=1, n_warmup_batches=5, **kwargs):
     # simulation start
     start_time = time.time()
@@ -86,6 +86,7 @@ def run_sim(env, max_episodes=1, max_step_per_episode=100, render=False, seed_nu
         total_time_out = 0
 
         # Start episode
+        cnt = 0
         sim_episodes = tqdm(range(1, max_episodes+1))
         for i_episode in sim_episodes:
             # reset setting
@@ -97,37 +98,49 @@ def run_sim(env, max_episodes=1, max_step_per_episode=100, render=False, seed_nu
             state = env.reset(random_position=False, random_goal=False, max_steps=max_step_per_episode)
 
             for t in range(1, max_step_per_episode+1):
+                cnt += 1
                 # Policy
-                action_start = time.time()
                 if i_episode >= 0:
                     action = env.robot.act(state)       # if cartesian : [Vx Vy] else : [W, V]
                 else:   # Action Setting with Random
                     action = np.random.randn(action_space).clip(-max_action_scale, max_action_scale)
-                print(f"action time : {time.time() - action_start}")
 
-                step_start = time.time()
                 new_state, reward, is_terminal, info = env.step(action)
-                print(f"step time : {time.time() - step_start}")
 
-                state_encoding_start = time.time()
-                z, nz = env.robot.make_encoding_state(state), env.robot.make_encoding_state(new_state)
-                print(f"state encoding time : {time.time() - state_encoding_start}")
+                z = env.robot.make_encoding_state(state)
+                nz = env.robot.make_encoding_state(new_state)
 
-                store_start = time.time()
+                ######## test vae model########
+                # z, recon1 = env.robot.make_encoding_state(state)
+                # nz, recon2 = env.robot.make_encoding_state(new_state)
+                # recon_test_path = os.path.join(PATH, 'vae_z_recon_test')
+                # tf_test = ImageTransform()
+                # grid_map_state = make_grid_img.grid_based_state_function(new_state, robot_detection_scope_radius,
+                #                                                          detection_scope_resolution, img_plot_size)
+                # # cv2.imwrite(recon_test_path + r'/' + str(cnt) + '.png', grid_map_state)
+                # grid_map_state = tf_test(grid_map_state)
+                # grid_map_state = torch.Tensor(grid_map_state).unsqueeze(0)
+                # grid_map_state = grid_map_state.data.cpu()
+                # recon1 = recon1.data.cpu()
+                # recon2 = recon2.data.cpu()
+                # print(grid_map_state.shape)
+                # print(recon1.shape)
+                # check_z = torch.cat([grid_map_state, recon1, recon2])
+                # torchvision.utils.save_image(check_z.data.cpu(), recon_test_path+f'/{cnt}.png')
+                ################################
+
+
                 env.robot.store_trjectory(z, action, reward, nz, is_terminal)
                 tmp_trajectories.append((z, action, reward, nz, is_terminal))
-                print(f"store time : {time.time() - store_start}")
 
                 state = new_state
                 time_step_for_ep += 1
                 score += reward
 
                 # Train Policy
-                learning_start = time.time()
                 min_samples = env.robot.policy.replay_buffer.batch_size * n_warmup_batches
                 if len(env.robot.policy.replay_buffer) > min_samples:
                     env.robot.policy.train()
-                print(f"learning time : {time.time() - learning_start}")
 
                 # Check Episode Terminal
                 if is_terminal or t == max_step_per_episode:
@@ -236,13 +249,13 @@ if __name__ == "__main__":
     seed_num = 1
     action_noise = 0.1
 
-    pretrain_episodes = 1000
+    pretrain_episodes = 100000
 
     # CNN VAE
     is_vae = True
     vae_img_channels = 3
     vae_z_dim = 32
-    vae_n_epochs = 10
+    vae_n_epochs = 500
     train_dataset_split_percentage = 0.7
 
     # vae hyperparameter
@@ -362,13 +375,14 @@ if __name__ == "__main__":
     detection_scope_resolution = 0.1
     img_plot_size = (10, 10)
 
-    # make img and save
+    ##### MAKE IMG ANG SAVE #####
     # for idx, pre_data in enumerate(tqdm(pretrain_dataset, desc="Make Img Dataset From Pretrain Data")):
     #     state = pre_data[0]
     #
-    #     grid_map_state, (f, ax) = make_grid_img.grid_based_state_function(state, robot_detection_scope_radius, detection_scope_resolution, img_plot_size)
-    #     f.savefig(img_save_dir + r'/' + str(idx) + '.png')
-    #     plt.close(f)
+    #     grid_map_state = make_grid_img.grid_based_state_function(state, robot_detection_scope_radius, detection_scope_resolution, img_plot_size)
+    #     cv2.imwrite(img_save_dir + r'/' + str(idx) + '.png', grid_map_state)
+    # print("IMG SAVE DONE")
+
 
     print("get vae")
     #     2) GET VAE Model
@@ -397,8 +411,8 @@ if __name__ == "__main__":
     len_test_dataset = len(img_dataset) - len_train_dataset
     train_dataset, test_dataset = torch.utils.data.random_split(img_dataset, [len_train_dataset, len_test_dataset])
     # data loader
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
-    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=True)
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=256, shuffle=True)
+    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=256, shuffle=True)
     total_dataloader = torch.utils.data.DataLoader(img_dataset, batch_size=1, shuffle=False)
     # check data loader
     # fixed_x = next(iter(train_dataloader))
@@ -406,41 +420,43 @@ if __name__ == "__main__":
     # exit()
 
     #        4) Train VAE
-    # cur_best_model = None
-    # for epoch in range(1, vae_n_epochs + 1):
-    #     vae_train_loss = 0
-    #     for batch_idx, data_img in enumerate(train_dataloader):
-    #         data_img = data_img.to(device)
-    #         recon_x, mu, log_sigma, z = vae_model(data_img)
-    #         loss = vae_model.loss_function(recon_x, data_img, mu, log_sigma)
-    #         optimizer.zero_grad()
-    #         loss.backward()
-    #         optimizer.step()
-    #
-    #         # log
-    #         vae_train_loss += loss.item()
-    #
-    #         if batch_idx % 10 == 0:
-    #             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-    #                 epoch, batch_idx * len(data_img), len(train_dataloader.dataset),
-    #                        100. * batch_idx / len(train_dataloader),
-    #                        loss.item() / len(data_img)))
-    #
-    #     print('====> Epoch: {} Average loss: {:.4f}'.format(
-    #         epoch, vae_train_loss / len(train_dataloader.dataset)))
-    #
-    #     # check point
-    #     best_filename = os.path.join(vae_model_dir, 'best.tar')
-    #
-    #     torch.save({
-    #         'state_dict': vae_model.state_dict(),
-    #         'optimizer': optimizer.state_dict(),
-    #         'scheduler': scheduler.state_dict(),
-    #     }, best_filename)
+    cur_best_model = None
+    for epoch in range(1, vae_n_epochs + 1):
+        vae_train_loss = 0
+        for batch_idx, data_img in enumerate(train_dataloader):
+            data_img = data_img.to(device)
+            recon_x, mu, log_sigma, z = vae_model(data_img)
+            loss, BCE, KLD = vae_model.loss_function(recon_x, data_img, mu, log_sigma)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            # log
+            vae_train_loss += loss.item()
+
+            if batch_idx % 10 == 0:
+                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}, BCE : {:3f}'.format(
+                    epoch, batch_idx * len(data_img), len(train_dataloader.dataset),
+                           100. * batch_idx / len(train_dataloader),
+                           loss.item() / len(data_img), BCE.item() / len(data_img)))
+
+        print('====> Epoch: {} Average loss: {:.4f}'.format(
+            epoch, vae_train_loss / len(train_dataloader.dataset)))
+
+        # check point
+        best_filename = os.path.join(vae_model_dir, 'best.tar')
+
+        torch.save({
+            'state_dict': vae_model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'scheduler': scheduler.state_dict(),
+        }, best_filename)
 
     # test vae model
-    # print("test vae model")
-    # check_vae_model(vae_model, test_dataset)
+    print("test vae model")
+    check_vae_model(vae_model, test_dataset)
+
+    exit()
 
     # Set VAE Model To Robot
     env.robot.set_vae_model(vae_model)
@@ -461,8 +477,7 @@ if __name__ == "__main__":
 ################################################################################################
     # Pretrain RL Model
     # 2) CASE 1. pretrain 학습
-    pretrain_env.pretrain_with_vae_latent(latent_dataset_dir=latent_dataset_dir, pretrain_episodes=pretrain_episodes)
-
+    # pretrain_env.pretrain_with_vae_latent(latent_dataset_dir=latent_dataset_dir, pretrain_episodes=pretrain_episodes)
     # 2) CASE 2. Training VAE Model
     # vae_model, vae_normalizer = pretrain_env.trainVAE(input_dim=raw_observation_space,
     #                                                   latent_dim=observation_space,
@@ -474,7 +489,7 @@ if __name__ == "__main__":
     #####PRETRAINING Done#####
 
     # 학습된 모델 저장
-    pretrain_env.save_model()
+    # pretrain_env.save_model()
 
     print("################")
     print("Pretraining Done")

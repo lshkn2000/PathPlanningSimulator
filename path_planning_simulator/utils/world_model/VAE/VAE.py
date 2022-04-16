@@ -96,4 +96,4 @@ class ConvVAE(nn.Module):
         # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
         # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
         KLD = -0.5 * torch.mean(1 + logsigma - mu.pow(2) - logsigma.exp())
-        return BCE + KLD
+        return BCE + KLD, BCE, KLD

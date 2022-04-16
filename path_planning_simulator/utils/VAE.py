@@ -137,7 +137,7 @@ class VAEEXE(pl.LightningModule):
         result = self.forward(x) # mu, log_var, x, x_hat
 
         # loss function in model
-        loss = self.model.loss_function(*result, kld_weight=self.kld_weight)
+        loss, _, _ = self.model.loss_function(*result, kld_weight=self.kld_weight)
 
         self.log("TrainLoss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
@@ -150,7 +150,7 @@ class VAEEXE(pl.LightningModule):
         result = self.forward(x)  # mu, log_var, x, x_hat
 
         # loss function in model
-        loss = self.model.loss_function(*result, kld_weight=self.kld_weight)
+        loss, _, _ = self.model.loss_function(*result, kld_weight=self.kld_weight)
 
         self.log("ValLoss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss

@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 from collections import deque
 import numpy as np
 import torch
+import cv2
+import torchvision.utils
 from PIL import Image
 import time
 
@@ -62,7 +64,7 @@ class Robot(Agent):
         self.img_transformer = img_transformer
         self.detection_scope = detection_scope
         self.detection_scope_resolution = resolution
-        self.img_plot_size = plot_size
+        self.plot_size = plot_size
 
     def act(self, ob):
         if self.policy is None:
@@ -99,27 +101,18 @@ class Robot(Agent):
         # Relative Coordinate State information with image
         elif self.state_engineering == "VAE":
             start_drawing = time.time()
-            grid_state, (f, ax) = self.state_function.grid_based_state_function(ob,
-                                                                                self.detection_scope,
-                                                                                self.detection_scope_resolution,
-                                                                                self.img_plot_size)
-
-            print(f"drawing_time : {time.time() - start_drawing}")
-
-            start_img_conversion =time.time()
-            f.canvas.draw()
-            img = np.array(f.canvas.renderer._renderer) # RGBA : 4 channel
-            img = Image.fromarray(img.astype('uint8'))
-            img = img.convert("RGB")    # RGB : 3 channel
-            plt.close(f)
-            transformed_img = self.img_transformer(img)
+            # map shape : (256, 256, 3)
+            map = self.state_function.grid_based_state_function(ob,
+                                                                self.detection_scope,
+                                                                self.detection_scope_resolution,
+                                                                self.plot_size)
+            # cv2.imwrite('test.png', map)
+            # transformed_img shape : ([1, 3, 64, 64])
+            transformed_img = self.img_transformer(map)
             transformed_img = transformed_img.unsqueeze(0).to(device)
-            print(f"img_conversion_time : {time.time() - start_img_conversion}")
 
-            start_z = time.time()
             _, _, _, z = self.vae_model(transformed_img)
             state = z.cpu().detach().numpy()
-            print(f"z_time : {time.time() - start_z}")
             return state
 
     def step(self, action):

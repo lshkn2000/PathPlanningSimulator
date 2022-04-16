@@ -114,7 +114,7 @@ def model_train(vae_model, optimizer, dataloader, epoch):
         x = data.to(device)
         recon_x, mu, logsigma, z = vae_model(x)
         # cost
-        loss = vae_model.loss_function(recon_x, x, mu, logsigma)
+        loss, _, _ = vae_model.loss_function(recon_x, x, mu, logsigma)
         # validate
         optimizer.zero_grad()
         loss.backward()
@@ -154,7 +154,8 @@ def model_test(vae_model, data_loader):
         for data in data_loader:
             x = data.to(device)
             recon_x, mu, logsigma, z = vae_model(x)
-            test_loss += vae_model.loss_function(recon_x, x, mu, logsigma).item()
+            loss, _, _ = vae_model.loss_function(recon_x, x, mu, logsigma).item()
+            test_loss += loss
 
     test_loss /= len(data_loader.dataset)
     print('====> Test set loss: {:.4f}'.format(test_loss))
