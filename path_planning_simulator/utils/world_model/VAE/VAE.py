@@ -21,7 +21,7 @@ class Flatten(nn.Module):
 
 
 class UnFlatten(nn.Module):
-    def forward(self, input, size=256 * 6 * 6):
+    def forward(self, input, size=256 * 2 * 2):
         return input.view(input.size(0), size, 1, 1)
 
 
@@ -45,24 +45,22 @@ class ConvVAE(nn.Module):
             Flatten(),
         )
         # for encode Latent mean and std
-        self.fc_mu = nn.Linear(256 * 6 * 6, latent_size)
-        self.fc_logsigma = nn.Linear(256 * 6 * 6, latent_size)
+        self.fc_mu = nn.Linear(256 * 2 * 2, latent_size)
+        self.fc_logsigma = nn.Linear(256 * 2 * 2, latent_size)
 
-        self.fc_for_decode = nn.Linear(latent_size, 256 * 6 * 6)
+        self.fc_for_decode = nn.Linear(latent_size, 256 * 2 * 2)
         # Decoder
         # The decoder will reconstruct the image to the size of the input image in order to calculate the loss function.
         # for decode reconstruction
         self.decoder = nn.Sequential(
             UnFlatten(),
-            nn.ConvTranspose2d(in_channels=256 * 6 * 6, out_channels=128, kernel_size=(5, 5), stride=(2, 2)),
+            nn.ConvTranspose2d(in_channels=256 * 2 * 2, out_channels=128, kernel_size=(5, 5), stride=(2, 2)),
             nn.ReLU(),
             nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=(5, 5), stride=(2, 2)),
             nn.ReLU(),
-            nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=(5, 5), stride=(2, 2)),
+            nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=(6, 6), stride=(2, 2)),
             nn.ReLU(),
-            nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=(5, 5), stride=(2, 2)),
-            nn.ReLU(),
-            nn.ConvTranspose2d(in_channels=16, out_channels=3, kernel_size=(6, 6), stride=(2, 2)),
+            nn.ConvTranspose2d(in_channels=32, out_channels=3, kernel_size=(6, 6), stride=(2, 2)),
             nn.Sigmoid(),
         )
 
@@ -74,14 +72,15 @@ class ConvVAE(nn.Module):
 
     def decode(self, z):
         z = self.fc_for_decode(z)
-        z = self.decoder(z)
-        return z
+        recon = self.decoder(z)
+        return recon
 
     def reparameterize(self, mu, logsigma):
         # sample from mean and std
         std = torch.exp(logsigma.mul(0.5))     # std = sqrt(sigma)
         eps = torch.randn_like(std)         # random noise
-        return eps * std + mu
+        z = eps * std + mu
+        return z
 
     def forward(self, x):
         mu, logsigma = self.encode(x)

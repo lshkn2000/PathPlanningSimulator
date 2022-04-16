@@ -6,13 +6,17 @@ import time
 import datetime
 import pickle
 import collections
+from PIL import Image
+import matplotlib.pyplot as plt
 
 import numpy
 from tqdm import tqdm
 
 import torch
+import torch.optim as optim
 import numpy as np
 import gc
+from torchvision.utils import save_image
 from torch.utils.tensorboard import SummaryWriter
 
 from sim.environment import Environment
@@ -28,7 +32,13 @@ from utils.plot_graph import plot_data
 from utils.replay_buffer import ReplayBuffer
 
 from utils.pretrained import PretrainedSim
-from utils.pretrained_with_vae import PretrainedSimwithVAE
+from utils.pretrain import PretrainedSim
+from utils.world_model.VAE import VAE
+from path_planning_simulator.utils.state_function_engineering.grid_based_state_model import GridBasedState
+from path_planning_simulator.utils.world_model.VAE.make_dataset import make_file_list, ImageTransform, ImgDataset
+from path_planning_simulator.utils.world_model.VAE.train_cnn_vae import check_vae_model, get_model_latent
+
+device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
 
 def make_directories(path):
@@ -38,8 +48,16 @@ def make_directories(path):
         if not os.path.isdir(path):
             raise
 
+#############################################################################################
 
-def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=1, n_warmup_batches=5, **kwargs):
+
+
+
+###############################################################################################
+
+
+
+def run_sim(env, max_episodes=1, max_step_per_episode=100, render=False, seed_num=1, n_warmup_batches=5, **kwargs):
     # simulation start
     start_time = time.time()
     # Random Seed Setting
@@ -78,58 +96,38 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
             # train
             state = env.reset(random_position=False, random_goal=False, max_steps=max_step_per_episode)
 
-            # normalization
-            # state = state.reshape(1, -1) # (1, N)
-            # state = vae_normalizer.transform(state)
-
-            # vae transform
-            # vae_state = state.reshape(1, -1) # (1, N)
-            # vae_state = vae_normalizer.transform(vae_state)
-            # vae_state = torch.from_numpy(vae_state).float() # state (numpy) -> vae state (tensor)
-            # mu_state, logvar_state, input_state, recon_state = vae_model(vae_state)
-            # # case 1:
-            # # state = pretrain_env.reparameterize(mu_state, logvar_state)
-            # # case 2:
-            # state = mu_state
-            # state = state.cpu().data.numpy() # vae state (tensor) -> state (numpy)
-
             for t in range(1, max_step_per_episode+1):
-                # Policy Action
-
-                # Action Setting with Random
+                # Policy
+                action_start = time.time()
                 if i_episode >= 0:
                     action = env.robot.act(state)       # if cartesian : [Vx Vy] else : [W, V]
-                else:
+                else:   # Action Setting with Random
                     action = np.random.randn(action_space).clip(-max_action_scale, max_action_scale)
+                print(f"action time : {time.time() - action_start}")
 
+                step_start = time.time()
                 new_state, reward, is_terminal, info = env.step(action)
+                print(f"step time : {time.time() - step_start}")
 
-                # normalization
-                # new_state = new_state.reshape(1, -1) # (1, N)
-                # new_state = vae_normalizer.transform(new_state)
+                state_encoding_start = time.time()
+                z, nz = env.robot.make_encoding_state(state), env.robot.make_encoding_state(new_state)
+                print(f"state encoding time : {time.time() - state_encoding_start}")
 
-                # vae transform
-                # vae_new_state = new_state.reshape(1, -1) # (1, N)
-                # vae_new_state = vae_normalizer.transform(vae_new_state)
-                # vae_new_state = torch.from_numpy(vae_new_state).float()  # state (numpy) -> vae state (tensor)
-                # mu_new_state, logvar_new_state, input_new_state, recon_new_state = vae_model(vae_new_state)
-                # # case 1 :
-                # # new_state = pretrain_env.reparameterize(mu_new_state, logvar_new_state)
-                # # case 2 :
-                # new_state = mu_new_state
-                # new_state = new_state.cpu().data.numpy()  # vae state (tensor) -> state (numpy)
-
-                env.robot.store_trjectory(state, action, reward, new_state, is_terminal)
-                tmp_trajectories.append((state, action, reward, new_state, is_terminal))
+                store_start = time.time()
+                env.robot.store_trjectory(z, action, reward, nz, is_terminal)
+                tmp_trajectories.append((z, action, reward, nz, is_terminal))
+                print(f"store time : {time.time() - store_start}")
 
                 state = new_state
                 time_step_for_ep += 1
                 score += reward
 
                 # Train Policy
+                learning_start = time.time()
                 min_samples = env.robot.policy.replay_buffer.batch_size * n_warmup_batches
                 if len(env.robot.policy.replay_buffer) > min_samples:
                     env.robot.policy.train()
+                print(f"learning time : {time.time() - learning_start}")
 
                 # Check Episode Terminal
                 if is_terminal or t == max_step_per_episode:
@@ -218,6 +216,8 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
 
 if __name__ == "__main__":
+    PATH = r'/home/rvlab/PathPlanningSimulator_branch/PathPlanningSimulator_new_worldcoord_2/path_planning_simulator'
+
     make_directories("learning_data/reward_graph")
     make_directories("learning_data/video")
     make_directories("vae_ckpts")
@@ -238,21 +238,28 @@ if __name__ == "__main__":
 
     pretrain_episodes = 1000
 
+    # CNN VAE
+    is_vae = True
+    vae_img_channels = 3
+    vae_z_dim = 32
+    vae_n_epochs = 10
+    train_dataset_split_percentage = 0.7
+
     # vae hyperparameter
-    vae_hparameter = {"max_epochs": 10, "learning_rate": 0.002, "kld_weight":0.0001, "batch_size": 64}
-    vae_hidden_dim = [128, 64, 32]
+    # vae_hparameter = {"max_epochs": 10, "learning_rate": 0.002, "kld_weight":0.0001, "batch_size": 64}
+    # vae_hidden_dim = [128, 64, 32]
 
     # 로봇 소환
     # 1. 행동이 이산적인지 연속적인지 선택
     # 2. 로봇 초기화
-    robot = Robot(cartesian=True, robot_name="Robot", state_engineering="Basic")
+    robot = Robot(cartesian=True, robot_name="Robot", state_engineering="VAE") # ["Basic", "GridMap"]
     # robot_init_position = {"px":0, "py":-2, "vx":0, "vy":0, "gx":0, "gy":4, "radius":0.2}
     robot.set_agent_attribute(px=0, py=-2, vx=0, vy=0, gx=0, gy=4, radius=0.2, v_pref=1, time_step=time_step)
     robot.set_goal_offset(0.3)  # 0.3m 범위 내에서 목적지 도착 인정
 
     # 장애물 소환
     # 3. 동적 장애물
-    dy_obstacle_num = 5
+    dy_obstacle_num = 10
     dy_obstacles = [None] * dy_obstacle_num
     for i in range(dy_obstacle_num):
         dy_obstacle = DynamicObstacle()
@@ -280,8 +287,11 @@ if __name__ == "__main__":
         st_obstacles[i] = st_obstacle
 
     # 5. 로봇 정책(행동 규칙) 세팅
-    # observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4) # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
-    raw_observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4)
+    # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
+    if is_vae:
+        raw_observation_space = vae_z_dim
+    else:
+        raw_observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4)
 
     # RL Model input dimension
     observation_space = raw_observation_space
@@ -310,7 +320,7 @@ if __name__ == "__main__":
 
     # pretrain (+ VAE) 학습
     # 1) Collecting Pretrain Data
-    pretrain_env = PretrainedSimwithVAE(env, time_step)
+    pretrain_env = PretrainedSim(env, time_step)
 
     # If pretrain data exist, Get that.
     PRETRAIN_BUFFER_PATH = 'vae_ckpts/simulation_buffer_dict.pkl'
@@ -331,8 +341,127 @@ if __name__ == "__main__":
         with open(PRETRAIN_BUFFER_PATH, 'wb') as f:
             pickle.dump(buffer_dict, f)
 
+    ############################Model based Learning#####################################
+    print("get pretrain data")
+    # 1. Learning VAE model
+    #     1) GET Dataset
+    #        1) - 1 : Get Trajectories
+    if os.path.isfile(PRETRAIN_BUFFER_PATH):
+        with open(PRETRAIN_BUFFER_PATH, 'rb') as f:
+            buffer_dict = pickle.load(f)
+            pretrain_dataset = buffer_dict["pretrain"]
+
+    print("make img")
+    #        1) - 2 : Make Img Dataset
+    # make img dataset folder
+    img_save_dir = os.path.join(PATH, 'vae_ckpts/img_dataset')
+    make_directories(img_save_dir)
+    # # make grid img
+    make_grid_img = GridBasedState(is_relative=False)
+    robot_detection_scope_radius = 10
+    detection_scope_resolution = 0.1
+    img_plot_size = (10, 10)
+
+    # make img and save
+    # for idx, pre_data in enumerate(tqdm(pretrain_dataset, desc="Make Img Dataset From Pretrain Data")):
+    #     state = pre_data[0]
+    #
+    #     grid_map_state, (f, ax) = make_grid_img.grid_based_state_function(state, robot_detection_scope_radius, detection_scope_resolution, img_plot_size)
+    #     f.savefig(img_save_dir + r'/' + str(idx) + '.png')
+    #     plt.close(f)
+
+    print("get vae")
+    #     2) GET VAE Model
+    # learning model setting
+    vae_model_dir = os.path.join(PATH, r'utils/world_model/VAE/vae_models')
+    vae_model = VAE.ConvVAE(img_channels=vae_img_channels, latent_size=vae_z_dim).to(device=device)
+    optimizer = optim.Adam(vae_model.parameters(), lr=1e-3)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5)
+    # VAE 모델 저장 폴더 확인 및 기존 모델 가져오기
+    if not os.path.exists(vae_model_dir):
+        os.mkdir(vae_model_dir)
+
+    load_vae_model = os.path.join(vae_model_dir, 'best.tar')
+    if os.path.exists(load_vae_model):
+        state = torch.load(load_vae_model)
+        vae_model.load_state_dict(state['state_dict'])
+        optimizer.load_state_dict(state['optimizer'])
+        scheduler.load_state_dict(state['scheduler'])
+
+    print("get img")
+    #     3) Make Img dataloader
+    vae_train_img_list = make_file_list(img_save_dir)
+    img_dataset = ImgDataset(vae_train_img_list, ImageTransform())
+
+    len_train_dataset = int(len(img_dataset) * train_dataset_split_percentage)
+    len_test_dataset = len(img_dataset) - len_train_dataset
+    train_dataset, test_dataset = torch.utils.data.random_split(img_dataset, [len_train_dataset, len_test_dataset])
+    # data loader
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
+    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=True)
+    total_dataloader = torch.utils.data.DataLoader(img_dataset, batch_size=1, shuffle=False)
+    # check data loader
+    # fixed_x = next(iter(train_dataloader))
+    # save_image(fixed_x, 'test_dataloader_img.png')
+    # exit()
+
+    #        4) Train VAE
+    # cur_best_model = None
+    # for epoch in range(1, vae_n_epochs + 1):
+    #     vae_train_loss = 0
+    #     for batch_idx, data_img in enumerate(train_dataloader):
+    #         data_img = data_img.to(device)
+    #         recon_x, mu, log_sigma, z = vae_model(data_img)
+    #         loss = vae_model.loss_function(recon_x, data_img, mu, log_sigma)
+    #         optimizer.zero_grad()
+    #         loss.backward()
+    #         optimizer.step()
+    #
+    #         # log
+    #         vae_train_loss += loss.item()
+    #
+    #         if batch_idx % 10 == 0:
+    #             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+    #                 epoch, batch_idx * len(data_img), len(train_dataloader.dataset),
+    #                        100. * batch_idx / len(train_dataloader),
+    #                        loss.item() / len(data_img)))
+    #
+    #     print('====> Epoch: {} Average loss: {:.4f}'.format(
+    #         epoch, vae_train_loss / len(train_dataloader.dataset)))
+    #
+    #     # check point
+    #     best_filename = os.path.join(vae_model_dir, 'best.tar')
+    #
+    #     torch.save({
+    #         'state_dict': vae_model.state_dict(),
+    #         'optimizer': optimizer.state_dict(),
+    #         'scheduler': scheduler.state_dict(),
+    #     }, best_filename)
+
+    # test vae model
+    # print("test vae model")
+    # check_vae_model(vae_model, test_dataset)
+
+    # Set VAE Model To Robot
+    env.robot.set_vae_model(vae_model)
+    env.robot.set_state_img_param(ImageTransform(), robot_detection_scope_radius, detection_scope_resolution, img_plot_size)
+
+    # Get Latent Dataset
+    latent_dataset_dir = os.path.join(PATH, r'utils/world_model/VAE/vae_models/latent_dataset.pkl')
+    # get_model_latent(latent_dataset_dir, vae_model, total_dataloader)
+
+    # 2. Learning MDN LSTM Model
+    #     1) GET MDN LSTM Model
+    #
+    #     2) Get Dataset
+    #
+    #     3) Train MDN LSTM
+
+
+################################################################################################
+    # Pretrain RL Model
     # 2) CASE 1. pretrain 학습
-    pretrain_env.pretrain(vae_model=None, pretrain_episodes=pretrain_episodes)
+    pretrain_env.pretrain_with_vae_latent(latent_dataset_dir=latent_dataset_dir, pretrain_episodes=pretrain_episodes)
 
     # 2) CASE 2. Training VAE Model
     # vae_model, vae_normalizer = pretrain_env.trainVAE(input_dim=raw_observation_space,
@@ -345,13 +474,13 @@ if __name__ == "__main__":
     #####PRETRAINING Done#####
 
     # 학습된 모델 저장
-    # pretrain_env.save_model()
+    pretrain_env.save_model()
 
-    # print("################")
-    # print("Pretraining Done")
-    # print("################")
+    print("################")
+    print("Pretraining Done")
+    print("################")
 
     # 학습 가중치 가져오기
-    # robot.policy.load('learning_data/tmp')
+    robot.policy.load('learning_data/tmp')
 
-    # run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=False, seed_num=seed_num, n_warmup_batches=5)
+    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=False, seed_num=seed_num, n_warmup_batches=5)

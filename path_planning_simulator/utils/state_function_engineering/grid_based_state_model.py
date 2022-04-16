@@ -1,11 +1,15 @@
+import time
 import numpy as np
 from scipy.stats import norm, multivariate_normal
 from matplotlib import pyplot as plt
+import matplotlib.patches as patches
+import cv2
 
 
 class GridBasedState():
-    def __init__(self):
+    def __init__(self, is_relative=False):
         self.grid_heatmap_logs = []
+        self.is_relative = is_relative
 
     def grid_based_state_function(self, ob, robot_detection_scope_radius, detection_scope_resolution, map_size):
         """
@@ -26,7 +30,7 @@ class GridBasedState():
         else:
             is_scoping = True
 
-        grid_map_size = 2 * robot_detection_scope_radius    # grid map 한변 길이 = 2 * 반지름
+        grid_map_size = int(map_size[0])    # grid map 한변 길이 = 2 * 반지름
 
         # ob의 정보에서 로봇 정보와 obstacle 정보를 분리
         # Robot Info
@@ -42,8 +46,11 @@ class GridBasedState():
         obstacles = obstacles_info.reshape((-1, 5))
 
         # 탐지 범위와 상관없이 장애물의 정보 추출
-        total_obstacles_position = [obstacle[:2] - robot_position for obstacle in obstacles]
-        total_obstacles_position = np.array(total_obstacles_position)
+        if self.is_relative:
+            total_obstacles_position_velocity = [np.append(np.append(obstacle[:2] - robot_position, obstacle[2:4] - robot_velocity), obstacle[4]) for obstacle in obstacles]
+        else:
+            total_obstacles_position_velocity = [np.append(np.append(obstacle[:2], obstacle[2:4]), obstacle[4]) for obstacle in obstacles]
+        total_obstacles_position_velocity = np.array(total_obstacles_position_velocity)
 
         # robot의 탐지 범위 내의 장애물 정보만 추출
         scoped_obstacles = []
@@ -63,8 +70,10 @@ class GridBasedState():
         if scoped_obstacles.size != 0:
             # 탐지 범위 내에 있는 장애물에 대한 위치 grid map 생성
             # 로봇의 위치를 중심으로 장애물의 상대적인 위치를 표현하고 grid map 의 좌표계 중심으로 이동
-            scoped_obstacles_position = [obstacle[:2] - robot_position for obstacle in scoped_obstacles]  # [px, py, value]
-
+            if self.is_relative:
+                scoped_obstacles_position = [obstacle[:2] - robot_position for obstacle in scoped_obstacles]  # [px, py, value]
+            else:
+                scoped_obstacles_position = [obstacle[:2] for obstacle in scoped_obstacles]
             scoped_obstacles_position = np.array(scoped_obstacles_position)
 
             # value(information) at obstacle position
@@ -75,33 +84,139 @@ class GridBasedState():
             scoped_obstacles_position = np.array([])
             obstacle_pose_with_info = None
 
-        gmap, minx, maxx, miny, maxy = self.gaussian_grid_map(scoped_obstacles_position, grid_map_size, xyresolution=detection_scope_resolution, std=[0.5, 0.5])
+        start_gaussian = time.time()
+        gmap, minx, maxx, miny, maxy = self.gaussian_grid_map(scoped_obstacles_position, grid_map_size,
+                                                              xyresolution=detection_scope_resolution, std=[0.5, 0.5])
+        print(f"gaussian time : {time.time() - start_gaussian}")
         # self.grid_heatmap_logs.append(gmap)
 
         rot_gmap = np.rot90(gmap, 1)  # cw rotation # left_top 이 (0,0) 이므로 image frame 에 맞추는 작업
 
         ###### PLOT ######
+        start_plot = time.time()
         # plt.cla()
         # plt.ioff() # 계속 그리는 작업을 중단하고 plt.show() 일때 전체 업데이트 해서 보여줌 <--> plt.ion() : 디폴트
         # plt.gcf().canvas.mpl_connect('key_release_event',
         #                              lambda event: [exit(0) if event.key == 'escape' else None])
         # plt.rcParams["figure.figsize"] = map_size
-        #
-        # # 시각화
-        # self.draw_heatmap(robot_position, gmap, minx, maxx, miny, maxy, xyresolution=detection_scope_resolution)
-        #
-        # # 모든 장애물의 world coord 위치 표시
-        # for obstacle_position in total_obstacles_position:
-        #     plt.plot(obstacle_position[0], obstacle_position[1], 'ob')
-        # # 좌표계 선택에 따른 표현 방법
-        # plt.plot(robot_goal[0] - robot_position[0], robot_goal[1] - robot_position[1], 'or')
-        # plt.plot(0, 0, "og") # 로봇이 기준
-        # # plt.pause(0.1) # 해당시간만큼 이미지를 보여주고 꺼짐
+        # plt.axis([minx, maxx, miny, maxy])
+
+        # 시각화
+        # f, ax = self.draw_heatmap(gmap, minx, maxx, miny, maxy, xyresolution=detection_scope_resolution)
+        f, ax = self.draw_map(minx, maxx, miny, maxy)
+
+        print(f"plot time : {time.time() - start_plot}")
+
+        start_drawing_ob = time.time()
+        # 모든 장애물의 world coord 위치 표시
+        for obstacle_info in total_obstacles_position_velocity:
+            # position x, y and velocity x, y
+            ax.plot(obstacle_info[0], obstacle_info[1], 'ob')
+            # add obstacle circle
+            ob_vel_length = np.sqrt(obstacle_info[2] ** 2 + obstacle_info[3] ** 2)  # velocity wedge length
+            ob_vel_angle = np.arctan2(obstacle_info[3], obstacle_info[2])   # velocity angle
+            if ob_vel_angle < 0:
+                ob_vel_angle = 2 * np.pi + ob_vel_angle
+
+            # if robot in obstacle velocity length range, change color
+            ob_vel_angle_range = np.pi / 3
+            distance_btw_robot_obstacle = np.sqrt((robot_position[0] - obstacle_info[0]) ** 2 +
+                                                  (robot_position[1] - obstacle_info[1]) ** 2)
+            relative_angle_btw_robot_obstacle = np.arctan2(robot_position[1]-obstacle_info[1],
+                                                           robot_position[0]-obstacle_info[0])
+            if relative_angle_btw_robot_obstacle < 0:
+                relative_angle_btw_robot_obstacle = 2 * np.pi + relative_angle_btw_robot_obstacle
+            if ob_vel_length > distance_btw_robot_obstacle - robot_size and \
+                    (ob_vel_angle - ob_vel_angle_range < relative_angle_btw_robot_obstacle < ob_vel_angle + ob_vel_angle_range):
+                face_color = 'tomato'
+            else:
+                face_color = 'lightblue'
+
+            ax.add_patch(
+                patches.Wedge(
+                    (obstacle_info[0], obstacle_info[1]),
+                    r=ob_vel_length,
+                    theta1=np.rad2deg(ob_vel_angle - ob_vel_angle_range),
+                    theta2=np.rad2deg(ob_vel_angle + ob_vel_angle_range),
+                    edgecolor='aqua',
+                    facecolor=face_color,
+                    alpha=0.8,
+                )
+            )
+            ax.add_patch(
+                patches.Circle(
+                    (obstacle_info[0], obstacle_info[1]),
+                    radius=obstacle_info[4],
+                    facecolor='blue'
+                )
+            )
+        # 좌표계 선택에 따른 표현 방법
+        if self.is_relative:
+            # add goal, robot position
+            ax.plot(robot_goal[0] - robot_position[0], robot_goal[1] - robot_position[1], 'or')
+            ax.plot(0, 0, "og")  # 로봇이 기준
+            # add velocity arrow
+            ax.add_patch(
+                patches.Arrow(
+                    0, 0,
+                    robot_velocity[0], robot_velocity[1],
+                    width=0.3,
+                    edgecolor='deeppink',
+                    facecolor='tomato'
+                ))
+            ax.add_patch(
+                patches.Circle(
+                    (0, 0),
+                    radius=robot_size,
+                    facecolor='green'
+                )
+            )
+            ax.add_patch(
+                patches.Circle(
+                    (robot_goal[0] - robot_position[0], robot_goal[1] - robot_position[1]),
+                    radius=0.3,
+                    facecolor='red',
+                    alpha=0.6,
+                )
+            )
+        else:
+            # add goal, robot position
+            ax.plot(robot_goal[0], robot_goal[1], 'or')
+            ax.plot(robot_position[0], robot_position[1], "og")
+            # add velocity arrow
+            ax.add_patch(
+                patches.Arrow(
+                    robot_position[0], robot_position[1],
+                    robot_velocity[0], robot_velocity[1],
+                    width=0.3,
+                    edgecolor='deeppink',
+                    facecolor='tomato',
+                ))
+            ax.add_patch(
+                patches.Circle(
+                    (robot_position[0], robot_position[1]),
+                    radius=robot_size,
+                    facecolor='green'
+                )
+            )
+            ax.add_patch(
+                patches.Circle(
+                    (robot_goal[0], robot_goal[1]),
+                    radius=0.3,
+                    facecolor='red',
+                    alpha=0.6,
+                )
+            )
+
+        # grid hold
+        ax.set(xlim=(minx, maxx), ylim=(miny, maxy))
+        # plt.pause(0.1) # 해당시간만큼 이미지를 보여주고 꺼짐
         # plt.show()  # 계속 이미지를 보여줌
+        print(f"drawing obstacle time : {time.time() - start_drawing_ob}")
 
-        return rot_gmap
+        return rot_gmap, (f, ax)
 
-    def gaussian_grid_map(self, obstacles_positions, grid_map_size, xyresolution, std):
+    def gaussian_grid_map(self, obstacles_positions, grid_map_size, xyresolution, std, *args):
         # map size 가 NxN의 정사각형을 가정
         minx = -round(grid_map_size / 2)
         maxx = round(grid_map_size / 2)
@@ -134,10 +249,19 @@ class GridBasedState():
 
         return gmap, minx, maxx, miny, maxy
 
-    def draw_heatmap(self, robot_position, data, minx, maxx, miny, maxy, xyresolution):
+    def draw_heatmap(self, data, minx, maxx, miny, maxy, xyresolution):
         xyreso = xyresolution
 
         x, y = np.mgrid[slice(minx - xyreso / 2.0, maxx + xyreso / 2.0, xyreso), slice(miny - xyreso / 2.0, maxy + xyreso / 2.0, xyreso)]
 
-        plt.pcolor(x, y, data, vmax=1.0, cmap=plt.cm.Blues)
-        plt.axis("equal")
+        f, ax = plt.subplots(figsize=(maxx-minx, maxy-miny))
+        ax.pcolor(x, y, data, vmax=1.0, cmap=plt.cm.Blues)
+        ax.axis("equal")
+
+        return f, ax
+
+    def draw_map(self, minx, maxx, miny, maxy):
+        f, ax = plt.subplots(figsize=(maxx-minx, maxy-miny))
+        ax.axis("equal")
+        return f, ax
+

@@ -44,8 +44,9 @@ class ImageTransform():
 
         self.data_transform = transforms.Compose( # Compose 클래스를 통해 통합적으로 전처리
             [
-                transforms.ToTensor(), # PIL, ndarray(cv2)를 tensor로 변환
-                transforms.Resize((126, 126)),
+                transforms.ToTensor(),  # PIL, ndarray(cv2)를 tensor로 변환
+                transforms.Resize((64, 64)),
+
             ]
         )
 

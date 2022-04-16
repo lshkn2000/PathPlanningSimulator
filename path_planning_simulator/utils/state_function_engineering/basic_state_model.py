@@ -15,14 +15,14 @@ class BasicState():
         robot_size = robot_info[6]
 
         # Relative Goal
-        robot_info[4:6] = robot_goal - robot_position
+        # robot_info[4:6] = robot_goal - robot_position
 
         # Dynamic Obstacle Info
         obstacles_info = ob[7:]
         obstacles_num = len(obstacles_info) // 5  # dynamic obstacle : [(px, py, vx, vy, radius)]
         obstacles = obstacles_info.reshape((-1, 5))
-        relative_state_dy_obstacle = [(obstacle[0] - robot_position[0], obstacle[1] - robot_position[1],
-                                       obstacle[2] - robot_velocity[0], obstacle[3] - robot_velocity[1],
+        relative_state_dy_obstacle = [(obstacle[0], obstacle[1],
+                                       obstacle[2], obstacle[3],
                                        obstacle[4])
                                       for obstacle in obstacles]
 
