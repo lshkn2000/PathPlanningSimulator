@@ -87,8 +87,6 @@ class GridBasedState():
             scoped_obstacles_position = np.array([])
             obstacle_pose_with_info = None
 
-        start_opencv = time.time()
-
         # Drawing obstacle in OpenCV
         transformed_robot_position, tranformed_scale = self.get_cv2_coord_transform(np.array([robot_position]),
                                                                                     plot_size_real_val=(10, 10),

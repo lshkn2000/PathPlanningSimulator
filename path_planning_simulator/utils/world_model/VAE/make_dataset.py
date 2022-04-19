@@ -44,9 +44,9 @@ class ImageTransform():
 
         self.data_transform = transforms.Compose( # Compose 클래스를 통해 통합적으로 전처리
             [
+
                 transforms.ToTensor(),  # PIL, ndarray(cv2)를 tensor로 변환
                 transforms.Resize((64, 64)),
-
             ]
         )
 
@@ -72,6 +72,7 @@ class ImgDataset(Dataset):
         # 데이터 셋의 특정 1개의 샘플 가져오기
         img_path = self.file_list[index]
         img = cv2.imread(img_path)
+        img = 255 - img # 흑백 반전
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img_transformed = self.transform(img)
         return img_transformed

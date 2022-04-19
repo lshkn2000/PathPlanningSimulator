@@ -50,8 +50,11 @@ def make_directories(path):
         if not os.path.isdir(path):
             raise
 
-#############################################################################################
 
+def save_model(state, is_best, filename, best_filename):
+    torch.save(state, filename)
+    if is_best:
+        torch.save(state, best_filename)
 
 
 
@@ -107,8 +110,8 @@ def run_sim(env, max_episodes=1, max_step_per_episode=100, render=False, seed_nu
 
                 new_state, reward, is_terminal, info = env.step(action)
 
-                z = env.robot.make_encoding_state(state)
-                nz = env.robot.make_encoding_state(new_state)
+                z, _ = env.robot.make_encoding_state(state)
+                nz, _ = env.robot.make_encoding_state(new_state)
 
                 ######## test vae model########
                 # z, recon1 = env.robot.make_encoding_state(state)
@@ -123,8 +126,8 @@ def run_sim(env, max_episodes=1, max_step_per_episode=100, render=False, seed_nu
                 # grid_map_state = grid_map_state.data.cpu()
                 # recon1 = recon1.data.cpu()
                 # recon2 = recon2.data.cpu()
-                # print(grid_map_state.shape)
-                # print(recon1.shape)
+                # # print(grid_map_state.shape)
+                # # print(recon1.shape)
                 # check_z = torch.cat([grid_map_state, recon1, recon2])
                 # torchvision.utils.save_image(check_z.data.cpu(), recon_test_path+f'/{cnt}.png')
                 ################################
@@ -244,18 +247,17 @@ if __name__ == "__main__":
     time_step = 0.1                                         # real time 고려 한 시간 스텝 (s)
     max_step_per_episode = 200                              # 시뮬레이션 상에서 에피소드당 최대 스텝 수
     time_limit = max_step_per_episode                       # 시뮬레이션 스텝을 고려한 real time 제한 소요 시간
-    max_episodes = 10000
+    max_episodes = 50000
     env.set_time_step_and_time_limit(time_step, time_limit)
     seed_num = 1
     action_noise = 0.1
 
-    pretrain_episodes = 100000
+    pretrain_episodes = 10000
 
     # CNN VAE
-    is_vae = True
     vae_img_channels = 3
-    vae_z_dim = 32
-    vae_n_epochs = 500
+    vae_z_dim = 128
+    vae_n_epochs = 1000
     train_dataset_split_percentage = 0.7
 
     # vae hyperparameter
@@ -265,14 +267,14 @@ if __name__ == "__main__":
     # 로봇 소환
     # 1. 행동이 이산적인지 연속적인지 선택
     # 2. 로봇 초기화
-    robot = Robot(cartesian=True, robot_name="Robot", state_engineering="VAE") # ["Basic", "GridMap"]
+    robot = Robot(cartesian=True, robot_name="Robot", state_engineering="Basic") # ["Basic", "GridMap"]
     # robot_init_position = {"px":0, "py":-2, "vx":0, "vy":0, "gx":0, "gy":4, "radius":0.2}
     robot.set_agent_attribute(px=0, py=-2, vx=0, vy=0, gx=0, gy=4, radius=0.2, v_pref=1, time_step=time_step)
     robot.set_goal_offset(0.3)  # 0.3m 범위 내에서 목적지 도착 인정
 
     # 장애물 소환
     # 3. 동적 장애물
-    dy_obstacle_num = 10
+    dy_obstacle_num = 5
     dy_obstacles = [None] * dy_obstacle_num
     for i in range(dy_obstacle_num):
         dy_obstacle = DynamicObstacle()
@@ -301,9 +303,11 @@ if __name__ == "__main__":
 
     # 5. 로봇 정책(행동 규칙) 세팅
     # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
-    if is_vae:
+    raw_observation_space = 0
+    if robot.state_engineering == 'VAE':
         raw_observation_space = vae_z_dim
-    else:
+        # raw_observation_space += 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4)
+    elif robot.state_engineering == 'Basic':
         raw_observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4)
 
     # RL Model input dimension
@@ -388,7 +392,7 @@ if __name__ == "__main__":
     #     2) GET VAE Model
     # learning model setting
     vae_model_dir = os.path.join(PATH, r'utils/world_model/VAE/vae_models')
-    vae_model = VAE.ConvVAE(img_channels=vae_img_channels, latent_size=vae_z_dim).to(device=device)
+    vae_model = VAE.ConvVAE(img_channels=vae_img_channels, latent_dim=vae_z_dim).to(device=device)
     optimizer = optim.Adam(vae_model.parameters(), lr=1e-3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5)
     # VAE 모델 저장 폴더 확인 및 기존 모델 가져오기
@@ -411,60 +415,87 @@ if __name__ == "__main__":
     len_test_dataset = len(img_dataset) - len_train_dataset
     train_dataset, test_dataset = torch.utils.data.random_split(img_dataset, [len_train_dataset, len_test_dataset])
     # data loader
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=256, shuffle=True)
-    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=256, shuffle=True)
-    total_dataloader = torch.utils.data.DataLoader(img_dataset, batch_size=1, shuffle=False)
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, num_workers=4, shuffle=True)
+    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, num_workers=4, shuffle=False)
+    total_dataloader = torch.utils.data.DataLoader(img_dataset, batch_size=1, num_workers=4, shuffle=False)
     # check data loader
     # fixed_x = next(iter(train_dataloader))
     # save_image(fixed_x, 'test_dataloader_img.png')
     # exit()
 
     #        4) Train VAE
-    cur_best_model = None
-    for epoch in range(1, vae_n_epochs + 1):
-        vae_train_loss = 0
-        for batch_idx, data_img in enumerate(train_dataloader):
-            data_img = data_img.to(device)
-            recon_x, mu, log_sigma, z = vae_model(data_img)
-            loss, BCE, KLD = vae_model.loss_function(recon_x, data_img, mu, log_sigma)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            # log
-            vae_train_loss += loss.item()
-
-            if batch_idx % 10 == 0:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}, BCE : {:3f}'.format(
-                    epoch, batch_idx * len(data_img), len(train_dataloader.dataset),
-                           100. * batch_idx / len(train_dataloader),
-                           loss.item() / len(data_img), BCE.item() / len(data_img)))
-
-        print('====> Epoch: {} Average loss: {:.4f}'.format(
-            epoch, vae_train_loss / len(train_dataloader.dataset)))
-
-        # check point
-        best_filename = os.path.join(vae_model_dir, 'best.tar')
-
-        torch.save({
-            'state_dict': vae_model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'scheduler': scheduler.state_dict(),
-        }, best_filename)
-
-    # test vae model
-    print("test vae model")
-    check_vae_model(vae_model, test_dataset)
-
-    exit()
+    # cur_best_model = None
+    # for epoch in range(1, vae_n_epochs + 1):
+    #     vae_train_loss = 0
+    #     for batch_idx, data_img in enumerate(train_dataloader):
+    #         data_img = data_img.to(device)
+    #         recon_x, mu, log_sigma, z = vae_model(data_img)
+    #         loss, BCE, KLD = vae_model.loss_function(recon_x, data_img, mu, log_sigma)
+    #         optimizer.zero_grad()
+    #         loss.backward()
+    #         optimizer.step()
+    #
+    #         # log
+    #         vae_train_loss += loss.item()
+    #
+    #         if batch_idx % 10 == 0:
+    #             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}, BCE : {:3f}'.format(
+    #                 epoch, batch_idx * len(data_img), len(train_dataloader.dataset),
+    #                        100. * batch_idx / len(train_dataloader),
+    #                        loss.item() / len(data_img), BCE.item() / len(data_img)))
+    #
+    #     print('====> Epoch: {} Average loss: {:.4f}'.format(
+    #         epoch, vae_train_loss / len(train_dataloader.dataset)))
+    #
+    #     vae_model.train()
+    #     test_loss = 0
+    #     with torch.no_grad():
+    #         for data in test_dataloader:
+    #             test_x = data.to(device)
+    #             test_recon_x, test_mu, test_log_sigma, test_z = vae_model(test_x)
+    #             t_loss, _, _ = vae_model.loss_function(test_recon_x, test_x, test_mu, test_log_sigma)
+    #             test_loss += t_loss.item()
+    #         test_loss /= len(test_dataloader.dataset)
+    #         print('====> Test set loss: {:.4f}'.format(test_loss))
+    #
+    #     scheduler.step(test_loss)
+    #
+    #     # check point
+    #     best_filename = os.path.join(vae_model_dir, 'best.tar')
+    #     file_name = os.path.join(vae_model_dir, 'checkpoint.tar')
+    #     is_best = not cur_best_model or test_loss < cur_best_model
+    #     if is_best:
+    #         cur_best_model = test_loss
+    #
+    #     save_model({
+    #             'epoch': epoch,
+    #             'state_dict': vae_model.state_dict(),
+    #             'precision': test_loss,
+    #             'optimizer': optimizer.state_dict(),
+    #             'scheduler': scheduler.state_dict(),
+    #     }, is_best, file_name, best_filename)
+    #
+    #     if epoch % 10 == 0 and epoch != 0:
+    #         print("test vae model")
+    #         recon_test_path = os.path.join(PATH, 'vae_model_test_result')
+    #         check_vae_model(vae_model, test_dataset, recon_test_path + r'/'+ str(epoch) + '_epoch')
+    #
+    # # test vae model
+    # print("test vae model")
+    # check_vae_model(vae_model, test_dataset)
+    #
+    # exit()
 
     # Set VAE Model To Robot
     env.robot.set_vae_model(vae_model)
     env.robot.set_state_img_param(ImageTransform(), robot_detection_scope_radius, detection_scope_resolution, img_plot_size)
 
     # Get Latent Dataset
-    latent_dataset_dir = os.path.join(PATH, r'utils/world_model/VAE/vae_models/latent_dataset.pkl')
-    # get_model_latent(latent_dataset_dir, vae_model, total_dataloader)
+    if robot.state_engineering == "Basic":
+        latent_dataset_dir = None
+    elif robot.state_engineering == "VAE":
+        latent_dataset_dir = os.path.join(PATH, r'utils/world_model/VAE/vae_models/latent_dataset.pkl')
+        # get_model_latent(latent_dataset_dir, vae_model, total_dataloader)
 
     # 2. Learning MDN LSTM Model
     #     1) GET MDN LSTM Model

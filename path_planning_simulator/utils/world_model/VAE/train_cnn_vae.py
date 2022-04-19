@@ -253,9 +253,9 @@ def save_model(state, is_best, filename, best_filename):
 # torchvision.utils.save_image(compare_x.data.cpu(), 'sample_image.png')
 
 
-def check_vae_model(vae_model, dataset):
+def check_vae_model(vae_model, dataset, name:str='vae_sample_img'):
     idx = np.random.randint(dataset.__len__())
     fixed_x = dataset[idx].unsqueeze(0).to(device)  # [1, 3, 64, 64]
     recon_x, _, _, _ = vae_model(fixed_x)
     compare_x = torch.cat([fixed_x, recon_x])
-    torchvision.utils.save_image(compare_x.data.cpu(), 'vae_sample_img.png')
+    torchvision.utils.save_image(compare_x.data.cpu(), name+'.png')

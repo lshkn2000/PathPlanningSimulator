@@ -50,6 +50,7 @@ class Robot(Agent):
             self.state_function = BasicState()
         elif self.state_engineering == "VAE":
             self.state_function = GridBasedState(is_relative=False)
+            self.basic_state_function = BasicState()
 
         self.img_transformer = None
         self.detection_scope = None
@@ -75,7 +76,7 @@ class Robot(Agent):
         1. Dynamic Obstacle info : [(px, py, vx, vy, radius), ...]
         2. Static Obstacle info [(px, py, width, height)]
         """
-        state = self.make_encoding_state(ob)
+        state, recon = self.make_encoding_state(ob)
 
         # Action for State
         action = self.policy.predict(state)
@@ -95,12 +96,12 @@ class Robot(Agent):
         # 1. Basic model
         if self.state_engineering == "Basic":
             state = self.state_function.basic_state_function(ob)
-            return state
+            return state, None
 
         # 2. Grid based model
         # Relative Coordinate State information with image
         elif self.state_engineering == "VAE":
-            start_drawing = time.time()
+            basic_state = self.basic_state_function.basic_state_function(ob)
             # map shape : (256, 256, 3)
             map = self.state_function.grid_based_state_function(ob,
                                                                 self.detection_scope,
@@ -111,9 +112,11 @@ class Robot(Agent):
             transformed_img = self.img_transformer(map)
             transformed_img = transformed_img.unsqueeze(0).to(device)
 
-            _, _, _, z = self.vae_model(transformed_img)
-            state = z.cpu().detach().numpy()
-            return state
+            recon, _, _, z = self.vae_model(transformed_img)
+            vae_state = z.cpu().detach().numpy().squeeze()
+            state = vae_state
+            # state = np.hstack((basic_state, vae_state))
+            return state, recon
 
     def step(self, action):
         # Cartesian Coordinate Policy [Vx, Vy]

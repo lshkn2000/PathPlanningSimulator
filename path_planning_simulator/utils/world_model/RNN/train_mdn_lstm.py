@@ -52,7 +52,7 @@ def make_directories(path):
 #
 #
 # VAE 모델 가져오기
-vae_model = VAE.ConvVAE(img_channels=3, latent_size=z_size).to(device=device)
+vae_model = VAE.ConvVAE(img_channels=3, latent_dim=z_size).to(device=device)
 VAE_MODEL_PATH = os.path.join(PATH, r'utils/world_model/VAE/vae_models/best.tar')
 # VAE_MODEL_PATH = os.path.join(PATH, r'utils/world_model/VAE/vae_models/monkey5_best.tar')
 if os.path.exists(VAE_MODEL_PATH):
