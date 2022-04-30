@@ -1,164 +1,115 @@
 # from IPython.display import clear_output
 # %matplotlib notebook
-import os
 import random
 import time
 import datetime
-import pickle
-import collections
+from tqdm import tqdm
 
-import torch
 import numpy as np
 import gc
 from torch.utils.tensorboard import SummaryWriter
 
-from sim.environment import Environment
-from sim.robot import Robot
-from sim.obstacle import DynamicObstacle, StaticObstacle
-from policy.random import Random
-from policy.linear import Linear
-from policy.dqn import DQN
-from policy.sac import SAC
-# from policy.td3 import TD3
-from policy.td3_new import TD3
-from utils.plot_graph import plot_data
+from PathPlanningSimulator_new.path_planning_simulator.sim.environment import Environment
+from PathPlanningSimulator_new.path_planning_simulator.sim.robot import Robot
+from PathPlanningSimulator_new.path_planning_simulator.sim.obstacle import DynamicObstacle, StaticObstacle
+from PathPlanningSimulator_new.path_planning_simulator.policy.linear import Linear
 
-from utils.pretrained import PretrainedSim
+from PathPlanningSimulator_new.path_planning_simulator.policy.td3_new import TD3
+
+from PathPlanningSimulator_new.path_planning_simulator.utils.pretrain.pretrain import PretrainingEnv
+from PathPlanningSimulator_new.path_planning_simulator.utils.file_manager import *
+
+device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
 
-def make_directories(path):
-    try:
-        os.makedirs(path)
-    except OSError:
-        if not os.path.isdir(path):
-            raise
-
-def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=1, n_warmup_batches=5, update_target_interval=1, **kwargs):
+def run_sim(env, max_episodes=1, max_step_per_episode=100, render=False, random_action_episodes=100, n_warmup_batches=5, **kwargs):
     # simulation start
     start_time = time.time()
-    timestr = time.strftime("%Y%m%d_%H%M%S")    # 학습 데이터 저장용
-
-    SEED = [random.randint(1, 100) for _ in range(seed_num)]
     dt = env.time_step
 
-    # 각 로봇, 동적 장애물 행동 취하기
-    # 에피소드 실행
-    print(env.robot.info)
-    # print(env.dy_obstacles[0].info)
+    # Random Seed Setting
+    SEED = 425
+    torch.manual_seed(SEED)
+    np.random.seed(SEED)
+    random.seed(SEED)
 
-    total_seeds_episodes_results = []
+    # Info About Env
+    print(env.robot.info)
+
+    # Tensorboard Logging
     plot_log_data = SummaryWriter()
 
+    # Simulate
     total_collision = 0
     total_goal = 0
     total_time_out = 0
 
-    for i_seed, seed in enumerate(SEED):
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
+    cnt = 0
+    sim_episodes = tqdm(range(1, max_episodes+1))
+    for i_episode in sim_episodes:
+        # reset setting
+        is_terminal = False
+        score = 0.0
+        time_step_for_ep = 0
 
-        episodes_result = []
+        # train
+        state = env.reset(random_position=False, random_goal=False, max_steps=max_step_per_episode)
 
-        for i_episode in range(1, max_episodes+1):
-            state = env.reset(random_position=False, random_goal=False, max_steps=max_step_per_episode)
-            is_terminal = False
-            score = 0.0
-            time_step_for_ep = 0
+        for t in range(1, max_step_per_episode+1):
+            cnt += 1
+            # Policy
+            if i_episode >= random_action_episodes:
+                action = env.robot.act(state)       # if cartesian : [Vx Vy] else : [W, V]
+                # Action with noise
+                action += np.random.normal(0.0, max_action_scale * action_noise, size=action_space)
+                action = action.clip(-max_action_scale, max_action_scale)
+            else:   # Action Setting with Random
+                action = np.random.randn(action_space).clip(-max_action_scale, max_action_scale)
 
-            n_warmup_batches = n_warmup_batches
-            update_target_interval = update_target_interval # 1 for DDP
+            new_state, reward, is_terminal, info = env.step(action)
 
-            for t in range(1, max_step_per_episode+1):
-                if i_episode >= 0:
-                    # action : (vx, vy)
-                    # robot 의 act 함수에서 if holonomic : (vx, vy) else (ang_vel, lin_vel)에 대한 학습이 되고 (vx, vy)가 출력된다.
-                    # 따라서 여기서의 출력은 변환이 완료된 vx, vy 이다.
-                    if env.robot.is_holonomic: # 여기서 holonomic : world coord + cartesian coord 
-                        action, discrete_action_index = env.robot.act(state)
-                    else: # 여기서 non-holonomic : robot coord + polar coord
-                        action, angular_n_linear_velocity = env.robot.act(state)
-                        angular_n_linear_velocity += np.random.normal(0.0, max_action_scale * action_noise, size=action_space)
-                        angular_n_linear_velocity = angular_n_linear_velocity.clip(-max_action_scale, max_action_scale)
-                    action += np.random.normal(0.0, max_action_scale * action_noise, size=action_space)
-                    action = action.clip(-max_action_scale, max_action_scale)
-                else:
-                    if env.robot.is_discrete_actions:
-                        discrete_action_index = np.random.randint(action_space)
-                    else:
-                        angular_n_linear_velocity = np.random.randn(action_space).clip(-max_action_scale, max_action_scale)
+            env.robot.store_trjectory(state, action, reward, new_state, is_terminal)
 
-                        env.robot.theta = env.robot.theta + (angular_n_linear_velocity[0] * np.pi) * env.robot.time_step # input -pi ~ pi (rad/s)
-                        # scope angle to -2pi ~ 2pi
-                        rot_delta_theta = env.robot.theta / (2 * np.pi)
-                        rot_delta_theta = (rot_delta_theta - np.trunc(rot_delta_theta)) * (2 * np.pi)
-                        # scope angle to 0 ~ 2pi
-                        rot_delta_theta = (2 * np.pi + rot_delta_theta) * (rot_delta_theta < 0) + (rot_delta_theta) * (rot_delta_theta > 0)
+            state = new_state
+            time_step_for_ep += 1
+            score += reward
 
-                        action_vx = angular_n_linear_velocity[1] * np.cos(rot_delta_theta)
-                        action_vy = angular_n_linear_velocity[1] * np.sin(rot_delta_theta)
-                        action = np.array([action_vx, action_vy]) 
-                        
-                new_state, reward, is_terminal, info = env.step(action)
-                
-                if env.robot.is_discrete_actions:
-                    env.robot.store_trjectory(state, discrete_action_index, reward, new_state, is_terminal)
-                else:
-                    if env.robot.is_holonomic:
-                        env.robot.store_trjectory(state, action, reward, new_state, is_terminal)
-                    else:
-                        env.robot.store_trjectory(state, angular_n_linear_velocity, reward, new_state, is_terminal)
+            # Train Policy
+            min_samples = env.robot.policy.replay_buffer.batch_size * n_warmup_batches
+            if len(env.robot.policy.replay_buffer) > min_samples:
+                env.robot.policy.train()
 
-                state = new_state
-                time_step_for_ep += 1
-                score += reward
+            # Check Episode Terminal
+            if is_terminal or t == max_step_per_episode:
+                if info == 'Goal':
+                    total_goal += 1
+                elif info == 'Collision' or info == 'OutBoundary':
+                    total_collision += 1
+                elif info == 'TimeOut':
+                    total_time_out += 1
 
-                min_samples = env.robot.policy.replay_buffer.batch_size * n_warmup_batches
-                if len(env.robot.policy.replay_buffer) > min_samples:
-                    env.robot.policy.train()
-                    # env.robot.policy.train(time_step_for_ep) # for TD3
+                sim_episodes.set_postfix({'episode': i_episode, 'steps': time_step_for_ep, 'reward': score,
+                                          'Total Episode': i_episode, 'Total Collision': total_collision,
+                                          'Total Goal': total_goal,
+                                          'Total Time Out': total_time_out, 'Success Rate': total_goal/i_episode})
+                # log success rate
+                plot_log_data.add_scalar('Success Rate', total_goal / i_episode, i_episode)
 
-                if time_step_for_ep % update_target_interval == 0:
-                    env.robot.policy.update_network()
-                    # env.robot.policy.update_network(time_step_for_ep, update_target_policy_every_steps=2, update_target_value_every_steps=2) # for TD3
+                gc.collect()
+                break
 
-                if is_terminal or t == max_step_per_episode:
-                    print("{} seeds {} episode, {} steps, {} reward".format(i_seed, i_episode, time_step_for_ep, score))
-                    if info == 'Goal':
-                        total_goal += 1
-                    elif info == 'Collision' or info == 'OutBoundary':
-                        total_collision += 1
-                    elif info == 'TimeOut':
-                        total_time_out += 1
+        # save learning weights
+        if i_episode % 100 == 0 and i_episode != 0:
+            env.robot.policy.save("learning_data/tmp")
 
-                    print(
-                        "Total Episode : {:5} , Total Collision : {:5f} , Total Goal : {:5f} , Total Time Out : {:5f}, Success Rate : {:.4f}".format(
-                            i_episode, total_collision, total_goal, total_time_out, total_goal / i_episode))
-                    gc.collect()
-                    break
+        # render check
+        if render and i_episode % 1 == 0 and i_episode != 0 and time_step_for_ep < 120:
+            env.render(path_info=True, is_plot=False)
 
-            # stat
-            episodes_result.append(score)
+    print('####################################')
+    env.robot.policy.save("learning_data/total")
+    print('####################################')
 
-            # log learning weights
-            plot_log_data.add_scalar('Reward for seed {}'.format(i_seed), score, i_episode)     # Tensorboard
-
-            # save learning weights
-            if i_episode % 100 == 0 and i_episode != 0:
-                env.robot.policy.save("learning_data/tmp")
-
-            # render check
-            if render and i_episode % 50 == 0 and i_episode != 0 and time_step_for_ep < 120:
-                env.render(path_info=True, is_plot=False)
-
-        total_seeds_episodes_results.append(episodes_result)
-
-        print('####################################')
-        env.robot.policy.save("learning_data/total")
-        print("{} set of simulation done".format(seed_num))
-        print('####################################')
-
-    plot_data(np.array(total_seeds_episodes_results), smooth=100, show=True, save=True)
     end_time = time.time() - start_time
     plot_log_data.close()
     print("simulation operating time : {}".format(str(datetime.timedelta(seconds=end_time))))
@@ -166,32 +117,42 @@ def run_sim(env, max_episodes=1, max_step_per_episode=50, render=True, seed_num=
 
 
 if __name__ == "__main__":
-    make_directories("learning_data/reward_graph")
-    make_directories("learning_data/video")
+    PATH = r'/home/rvlab/PathPlanningSimulator_branch/PathPlanningSimulator_Package/PathPlanningSimulator_new/path_planning_simulator'
 
     # 환경 소환
-    env = Environment(start_rvo2=True)
+    map_width = 10
+    map_height = 10
+    is_relative = True
+    env = Environment(map_width, map_height,
+                      start_rvo2=True, is_relative=is_relative, is_obstacle_sort=True,
+                      safe_distance=2.0)
 
     # 환경 변수 설정
     time_step = 0.1                                         # real time 고려 한 시간 스텝 (s)
     max_step_per_episode = 200                              # 시뮬레이션 상에서 에피소드당 최대 스텝 수
     time_limit = max_step_per_episode                       # 시뮬레이션 스텝을 고려한 real time 제한 소요 시간
-    max_episodes = 100000
+    max_episodes = 50000
     env.set_time_step_and_time_limit(time_step, time_limit)
-    seed_num = 1
     action_noise = 0.1
 
+    # pretraining paramter
+    pretrain_episodes = 5000
+    pretraining_file_path = './utils/pretrain'
+    pretraining_file_name = 'buffer_dict.pkl'
+    is_pretraining = False
+
+    # model load
+    model_path = 'learning_data/tmp'
+
     # 로봇 소환
-    # 1. 행동이 이산적인지 연속적인지 선택
-    # 2. 로봇 초기화
-    is_discrete_action_space = None # continuous action space 이면 None
-    robot = Robot(discrete_action_space=is_discrete_action_space, is_holomonic=True, robot_name="Robot")
+    # 1. 로봇 초기화
+    robot = Robot(robot_name="Robot", is_relative=is_relative)
     # robot_init_position = {"px":0, "py":-2, "vx":0, "vy":0, "gx":0, "gy":4, "radius":0.2}
     robot.set_agent_attribute(px=0, py=-2, vx=0, vy=0, gx=0, gy=4, radius=0.2, v_pref=1, time_step=time_step)
     robot.set_goal_offset(0.3)  # 0.3m 범위 내에서 목적지 도착 인정
 
     # 장애물 소환
-    # 3. 동적 장애물
+    # 2. 동적 장애물
     dy_obstacle_num = 5
     dy_obstacles = [None] * dy_obstacle_num
     for i in range(dy_obstacle_num):
@@ -206,7 +167,7 @@ if __name__ == "__main__":
 
         dy_obstacles[i] = dy_obstacle
 
-    # 4. 정적 장애물
+    # 3. 정적 장애물
     st_obstacle_num = 0
     st_obstacles = [None] * st_obstacle_num
     for i in range(st_obstacle_num):
@@ -219,42 +180,58 @@ if __name__ == "__main__":
 
         st_obstacles[i] = st_obstacle
 
-    # 5. 로봇 정책(행동 규칙) 세팅
-    observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4) # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
-    # 로봇의 action space 설정
+    # 4. 로봇 정책(행동 규칙) 세팅
+    # robot state(x, y, vx, vy, gx, gy, radius) + dy_obt(x,y,vx,vy,r) + st_obt(x,y,width, height)
+    basic_observation_space = 7 + (dy_obstacle_num * 5) + (st_obstacle_num * 4)
+
+    # RL Model input dimension
+    observation_space = basic_observation_space
+    # Setting Robot Action space
     action_space = 2    # 이산적이라면 상,하,좌,우, 대각선 방향 총 8가지
     max_action_scale = 1    # 가속 테스트용이 아니라면 스케일은 1로 고정하는 것을 추천. 속도 정보를 바꾸려면 로봇 action 에서 직접 바꾸는 방식이 좋을 듯 하다.
+
     # robot_policy = Random()
-    # robot_policy = DQN(observation_space, action_space, gamma=0.98, lr=0.0005)
-    # robot_policy = SAC(observation_space, action_space, action_space_low=[-1, -1], action_space_high=[1, 1], gamma=0.99, policy_optimizer_lr=0.0005, value_optimizer_lr=0.0007, tau=0.005)
-    # robot_policy = TD3(observation_space, action_space, action_space_low=[-max_action_scale, -max_action_scale],
-    #                    action_space_high=[max_action_scale, max_action_scale], gamma=0.99, lr=0.0003)
     robot_policy = TD3(observation_space, action_space, max_action=max_action_scale)
     robot.set_policy(robot_policy)
 
-    # 환경에 로봇과 장애물 세팅하기
+    # 5. 환경에 로봇과 장애물 세팅하기
     env.set_robot(robot)
 
-    # 클래스 담긴 리스트를 넘겨줄지 아니면 클래스 개별로 넘겨줄지는 효율적인 것을 고려해서 수정할 것
+    # 환경에 장애물 정보 세팅
     for obstacle in dy_obstacles:
         env.set_dynamic_obstacle(obstacle)
     for obstacle in st_obstacles:
         env.set_static_obstacle(obstacle)
-        
-    # pretrained
-    env.reset()
-    # 경험 데이터 (정답 데이터) 저장용
-    pretrained_replay_buffer = collections.deque(maxlen=1000000)
-    # pretrain 학습
-    pretrain_env = PretrainedSim(env, time_step)
-    for i in range(10000): # episode
-        pretrain_env.pretrain()
-        print("pretrained episode : {}".format(i))
 
-    pretrain_env.save_model() 
-    print("Pre train done!)
-    
+
+############################## PRETRAINING ####################################
+    if is_pretraining:
+        # Reset for pretraining
+        env.reset()
+        # 1) Collecting Pretrain Data
+        pretrain_env = PretrainingEnv(env, time_step)
+
+        # If pretrain data exist, Get that.
+        pretrain_env.data_load(pretraining_file_path, pretraining_file_name, pretrain_episodes)
+
+        pretrain_env.pretraining(pretrain_episodes=pretrain_episodes)
+
+        # 학습된 모델 저장
+        pretrain_env.save_model()
+
+        print("################")
+        print("Pretraining Done")
+        print("################")
+    else:
+        pass
+
+###################################################################################
     # 학습 가중치 가져오기
-    robot.policy.load('learning_data/tmp')
+    try:
+        robot.policy.load(model_path)
+    except Exception as e:
+        print("RL Model Not Exist! Start Learning Without it")
+        pass
 
-    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=False, seed_num=seed_num, n_warmup_batches=5, update_target_interval=2)
+    run_sim(env, max_episodes=max_episodes, max_step_per_episode=max_step_per_episode, render=False,
+            random_action_episodes=0, n_warmup_batches=5)

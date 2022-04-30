@@ -9,7 +9,7 @@ debug = False
 
 
 class ReplayBuffer():
-    def __init__(self, max_size=100000, batch_size=64):
+    def __init__(self, max_size=1000000, batch_size=64):
         self.ss_mem = np.empty(shape=(max_size), dtype=np.ndarray)
         self.as_mem = np.empty(shape=(max_size), dtype=np.ndarray)
         self.rs_mem = np.empty(shape=(max_size), dtype=np.ndarray)
@@ -23,6 +23,24 @@ class ReplayBuffer():
 
     def store(self, sample):
         s, a, r, p, d = sample
+
+        # 자료 구조 확인
+        if not isinstance(s, np.ndarray):
+            print(f"State : {s}")
+            raise Exception("Check State Data")
+        if not isinstance(a, np.ndarray):
+            print(f"State : {a}")
+            raise Exception("Check Action Data")
+        if not (isinstance(r, float) or isinstance(r, int)):
+            print(f"Reward : {r}")
+            raise Exception("Check Reward Data")
+        if not isinstance(p, np.ndarray):
+            print(f"Next State : {p}")
+            raise Exception("Check Next State Data")
+        if d != 1 and d != 0:
+            print(f"Is Terminal : {d}")
+            raise Exception("Check Is Terminal Data")
+
         self.ss_mem[self._idx] = s
         self.as_mem[self._idx] = a
         self.rs_mem[self._idx] = r
@@ -41,7 +59,7 @@ class ReplayBuffer():
 
         idxs = np.random.choice(
             self.size, batch_size, replace=False)
-        
+
         experiences = np.vstack(self.ss_mem[idxs]), \
                       np.vstack(self.as_mem[idxs]), \
                       np.vstack(self.rs_mem[idxs]), \
@@ -54,7 +72,7 @@ class ReplayBuffer():
         rewards = torch.from_numpy(rewards).float().to(device)
         new_states = torch.from_numpy(new_states).float().to(device)
         is_terminals = torch.from_numpy(is_terminals).float().to(device)
-        
+
         return states, actions, rewards, new_states, is_terminals
 
     def __len__(self):
@@ -78,10 +96,12 @@ class Actor(nn.Module):
         return x
 
     def forward(self, state):
+        # state shape : [256, 32]
         a = self._format(state)
         a = F.relu(self.l1(a))
         a = F.relu(self.l2(a))
-        return self.max_action * torch.tanh(self.l3(a))
+        action = self.max_action * torch.tanh(self.l3(a))
+        return action
 
 
 class Critic(nn.Module):
@@ -152,6 +172,7 @@ class TD3(object):
         self.total_it = 0
 
     def predict(self, state):
+        # state = torch.FloatTensor(state.reshape(1, -1)).to(device)
         action = self.actor(state).cpu().data.numpy().flatten()
         return action
 
@@ -186,15 +207,17 @@ class TD3(object):
 
             # Optimize the actor
             self.actor_optimizer.zero_grad()
+            # self.featured_state_optimizer.zero_grad()
             actor_loss.backward()
             self.actor_optimizer.step()
+            # self.featured_state_optimizer.step()
 
-    def update_network(self):
-        for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
-            target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+    # def update_network(self):
+            for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
-        for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
-            target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+            for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
     def store_trajectory(self, state, action, reward, next_state, is_terminal):
         experience = (state, action, reward, next_state, 1 if is_terminal else 0)
@@ -220,6 +243,12 @@ class TD3(object):
         self.critic_target.load_state_dict(check_point["target_critic_model"])
         self.actor_optimizer.load_state_dict(check_point["actor_optimizer"])
         self.critic_optimizer.load_state_dict(check_point["critic_optimizer"])
+
+    def eval(self):
+        self.actor.eval()
+        self.critic.eval()
+        self.actor_target.eval()
+        self.critic_target.eval()
 
 # def save(self, filename):
 # torch.save(self.critic.state_dict(), filename + "_critic")

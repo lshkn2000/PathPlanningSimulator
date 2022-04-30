@@ -5,31 +5,15 @@ from matplotlib.patches import Circle, Rectangle, ConnectionPatch
 import matplotlib.lines as mlines
 import matplotlib.animation as animation
 import rvo2
-import gym
 import time
-from path_planning_simulator.utils.utils import *
+from PathPlanningSimulator_new.path_planning_simulator.utils.calculations import *
 
 
-class Environment(gym.Env):
-    metadata = {'render.modes': ['human']}
-
-    def __init__(self, start_rvo2=True):
-
-        """
-        환경 맵 세팅(main)
-        장애물 배치(main) -> 세팅(Env) : 완료
-            동적 장애물은 원
-            정적 장애물은 사각형
-        로봇 배치(main) -> 세팅(Env) : 완료
-
-        run sim -> loop 돌면서 스텝 진행
-
-        gym wrapping
-        """
-
+class Environment(object):
+    def __init__(self, map_width, map_height, start_rvo2=True, is_relative=False, is_obstacle_sort=False, safe_distance=2.0):
         # map 크기
-        self.square_width = 10
-        self.square_height = 10
+        self.square_width = map_width
+        self.square_height = map_height
 
         # 로봇과 장애물 소환
         self.robot = None
@@ -46,6 +30,10 @@ class Environment(gym.Env):
         self.dy_obstacles_velocities = []
         self.robot_position = None
 
+        # 정답용 로봇 정보 기록용. reset()하면 초기화 됨
+        self.answer_robot_pos_n_vel = []
+        self.answer_robot_reach_goal = False
+
         # 한 에피소드당 스텝 시간 측정용
         self.time_step = None  # RVO2 의 step 시간 단위
         self.global_time = None
@@ -53,8 +41,14 @@ class Environment(gym.Env):
 
         self.step_cnt = 0
 
+        # relative or not
+        self.is_relative = is_relative
+
+        # obstacle sorting according to distance
+        self.is_obstacle_sort = is_obstacle_sort
+
         # 충돌 거리 설정
-        self.safe_distance = 1.0  # 로봇과 장애물이 소환되는 위치의 거리를 세팅
+        self.safe_distance = safe_distance  # 로봇과 장애물이 소환되는 위치의 거리를 세팅
 
         # 상태 정보 설계용
         self.scailing_factor = 1
@@ -130,9 +124,8 @@ class Environment(gym.Env):
         self.step_cnt += 1
 
         # collision check btw robot and dynamic obstacle
-        '''
-        장애물 사이의 충돌은 고려하지 않음
-        '''
+        # 장애물 사이의 충돌은 고려하지 않음
+
         collision = False
         reach_goal = False
 
@@ -199,16 +192,21 @@ class Environment(gym.Env):
 
         # check reaching the goal
         reach_goal = self.robot.reach_goal()
+        out_of_boundary = -self.square_width // 2 > self.robot.position[0] or \
+                          self.square_width // 2 < self.robot.position[0] or \
+                          -self.square_height // 2 > self.robot.position[1] or \
+                          self.square_height // 2 < self.robot.position[1]
 
         # reward setting
         '''
         조건 : time, collision, reach_goal 
         '''
-        # 0 time reward
+        # 0. time reward
         reward = -0.05
 
         # 1. reward for distance
-        target_distance_vector = (self.robot.position[0] - self.robot.goal[0], self.robot.position[1] - self.robot.goal[1])
+        target_distance_vector = (
+            self.robot.position[0] - self.robot.goal[0], self.robot.position[1] - self.robot.goal[1])
         target_norm = np.linalg.norm(target_distance_vector)
 
         if self.target_norm is None:
@@ -225,29 +223,29 @@ class Environment(gym.Env):
             reward += 10
             done = True
             info = "Goal"
-            print("goal!")
+            # print("goal!")
             self.target_norm = None
 
         elif collision:
             reward = -5
             done = True
             info = "Collision"
-            print("collision!")
+            # print("collision!")
             self.target_norm = None
 
         elif self.global_time >= self.time_limit - 1:
             reward = -5
             done = True
             info = "TimeOut"
-            print("timeout!")
+            # print("timeout!")
             self.target_norm = None
 
         # out of map get negative reward
-        elif -self.square_width // 2 > self.robot.position[0] or self.square_width // 2 < self.robot.position[0] or -self.square_height // 2 > self.robot.position[1] or self.square_height // 2 < self.robot.position[1]:
+        elif out_of_boundary:
             reward = -5
             done = True
             info = "OutBoundary"
-            print("collision!")
+            # print("collision!")
             self.target_norm = None
 
         else:
@@ -256,40 +254,42 @@ class Environment(gym.Env):
             info = None
 
         # next_step_ob
-        next_robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_goal]
+        if self.is_relative:
+            next_robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_relative_goal]
+        else:
+            next_robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_goal]
         # next_dy_obstacle_ob = [dy_obstacle.self_state_wo_goal for dy_obstacle in self.dy_obstacles]
         # 로봇 관점에서 로봇의 감지 범위 내에 있는 장애물들의 방향 벡터를 장애물의 위치 정보대신 사용한다.
-        next_dy_obstacle_ob = [(dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py, dy_obstacle.vx,
-                                dy_obstacle.vy, dy_obstacle.radius) for dy_obstacle in self.dy_obstacles if
-                               pow(pow((dy_obstacle.px - self.robot.px), 2) + pow((dy_obstacle.py - self.robot.py), 2),
-                                   0.5) <= self.robot.detection_scope]
+        # next_dy_obstacle_ob = [
+        #     (dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py,
+        #      dy_obstacle.vx - self.robot.vx,
+        #      dy_obstacle.vy - self.robot.vy, dy_obstacle.radius)
+        #     for dy_obstacle in self.dy_obstacles
+        #     if pow(pow((dy_obstacle.px - self.robot.px), 2) + pow((dy_obstacle.py - self.robot.py), 2),0.5)
+        #        <= self.robot.detection_scope
+        # ]
+        if self.is_relative:
+            next_dy_obstacle_ob = [
+                (dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py,
+                 dy_obstacle.vx - self.robot.vx, dy_obstacle.vy - self.robot.vy,
+                 dy_obstacle.radius)
+                for dy_obstacle in self.dy_obstacles
+            ]
+        else:
+            next_dy_obstacle_ob = [
+                (dy_obstacle.px, dy_obstacle.py, dy_obstacle.vx, dy_obstacle.vy, dy_obstacle.radius)
+                for dy_obstacle in self.dy_obstacles
+            ]
         next_st_obstacle_ob = [st_obstacle.self_state_wo_goal_rectangle for st_obstacle in self.st_obstacles]
 
         # 거리순으로 정렬 (먼 순으로)
-        next_dy_obstacle_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2))**0.5,
-                                 reverse=True)
-
-        # 회전변환하여 로봇에 대한 상대좌표로 변환
-        if not self.robot.is_holonomic:
-            next_dy_obstacle_ob = [(*rotate2D([dy_obstacle[0], dy_obstacle[1]], (np.pi / 2 - self.robot.theta)),
-                                    *rotate2D([dy_obstacle[2], dy_obstacle[3]], (np.pi / 2 - self.robot.theta)),
-                                    dy_obstacle[4]) for dy_obstacle in next_dy_obstacle_ob]
+        if self.is_obstacle_sort:
+            next_dy_obstacle_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5,
+                                     reverse=True)
 
         next_ob = [next_robot_ob] + [next_dy_obstacle_ob] + [next_st_obstacle_ob]
 
-        next_state = list(itertools.chain(*next_ob))
-        next_state_flatten = []  # 내부 튜플 제거...
-        for item in next_state:
-            if isinstance(item, tuple):
-                if len(item) != 0:
-                    for x in item:
-                        next_state_flatten.append(x)
-                else:
-                    pass
-            else:
-                next_state_flatten.append(item)
-
-        next_state = next_state_flatten
+        next_state = state_flattening(next_ob)
 
         return np.array(next_state) / self.scailing_factor, reward, done, info
 
@@ -303,6 +303,10 @@ class Environment(gym.Env):
         self.dy_obstacles_positions = [[] for _ in range(len(self.dy_obstacles_list))]
         self.dy_obstacles_velocities = [[] for _ in range(len(self.dy_obstacles_list))]
 
+        # 정답용 로봇 정보 초기화
+        self.answer_robot_pos_n_vel = []
+        self.answer_robot_reach_goal = False
+
         # 로봇 위치, 속도, 목적지 초기화
         # random 적용
         sign = 1 if np.random.random() > 0.5 else -1
@@ -315,8 +319,8 @@ class Environment(gym.Env):
             self.robot.vy = 0
         else:
             self.robot.px, self.robot.py = self.init_position
-            self.robot.vx, self.robot.vy = self.init_velocity   # if non-holonomic : vx = angular velocity, vx = linear velocity
-            self.robot.theta = np.pi / 2                        # world y axis direction is init direction of robot
+            self.robot.vx, self.robot.vy = self.init_velocity  # if non-holonomic : vx = angular velocity, vx = linear velocity
+            self.robot.theta = np.pi / 2  # world y axis direction is init direction of robot
 
         if random_goal:
             robot_gx = np.random.random() * (self.square_width * 0.5) * sign
@@ -326,7 +330,7 @@ class Environment(gym.Env):
         else:
             self.robot.gx, self.robot.gy = self.init_goal
 
-        # 장애물 위치 초기화
+        # 장애물 위치 세팅
         self.generate_random_position()
 
         if self.start_rvo2:
@@ -345,17 +349,34 @@ class Environment(gym.Env):
                                           dy_obstacle.radius,
                                           dy_obstacle.v_pref, dy_obstacle.velocity)
 
-                pref_velocity = dy_obstacle.goal[0] - dy_obstacle.position[0], dy_obstacle.goal[1] - \
-                                dy_obstacle.position[1]
+                pref_velocity = dy_obstacle.goal[0] - dy_obstacle.position[0], \
+                                dy_obstacle.goal[1] - dy_obstacle.position[1]
                 if np.linalg.norm(pref_velocity) > 1:
                     pref_velocity /= np.linalg.norm(pref_velocity)
                 self.sim.setAgentPrefVelocity(agent, tuple(pref_velocity))
+
+            # 정답용 로봇 정보를 추가 (Offline Learning 에 사용)
+            answer_robot = self.sim.addAgent(self.robot.position,
+                                             self.params['neighborDist'],
+                                             self.params['maxNeighbors'],
+                                             self.params['timeHorizon'],
+                                             self.params['timeHorizonObst'],
+                                             self.robot.radius,
+                                             self.robot.v_pref,
+                                             self.robot.velocity)
+
+            answer_robot_pref_velocity = self.robot.goal[0] - self.robot.position[0], \
+                                         self.robot.goal[1] - self.robot.position[1]
+            if np.linalg.norm(answer_robot_pref_velocity) > 1:
+                answer_robot_pref_velocity /= np.linalg.norm(answer_robot_pref_velocity)
+            self.sim.setAgentPrefVelocity(answer_robot, tuple(answer_robot_pref_velocity))
 
             # print('Simulation has %i agents and %i obstacle vertices in it.' %
             #       (self.sim.getNumAgents(), self.sim.getNumObstacleVertices()))
 
             check_dy_obstacles_reach_goal = [0] * len(self.dy_obstacles_list)  # rvo2의 목적지 도달 확인용
             check_reach_goal_pose = [0] * len(self.dy_obstacles_list)  # rvo2의 목적지 도달 위치 기록용
+            # 장애물의 주행 경로 정보를 저장 + 로봇이 RVO2 알고리즘을 주행하는 경우의 경로 추가 저장
             for step in range(max_steps):
                 self.sim.doStep()
 
@@ -366,9 +387,12 @@ class Environment(gym.Env):
                         rvo2_dy_obstacle_pose = self.sim.getAgentPosition(i)
                         rvo2_dy_obstacle_velocity = self.sim.getAgentVelocity(i)
                         dy_obstacle_goal = dy_obstacle.goal
-                        reach_goal = np.linalg.norm(
-                            np.array(rvo2_dy_obstacle_pose) - np.array(dy_obstacle_goal)) < dy_obstacle.radius
-                        out_of_boundary = rvo2_dy_obstacle_pose[0] < -self.square_width // 2 or self.square_width // 2 > rvo2_dy_obstacle_pose[0] or -self.square_height // 2 > rvo2_dy_obstacle_pose[1] or self.square_height // 2 < rvo2_dy_obstacle_pose[1]
+                        reach_goal = np.linalg.norm(np.array(rvo2_dy_obstacle_pose) - np.array(dy_obstacle_goal)) \
+                                     < dy_obstacle.radius
+                        out_of_boundary = rvo2_dy_obstacle_pose[0] < -self.square_width // 2 or \
+                                          self.square_width // 2 > rvo2_dy_obstacle_pose[0] or\
+                                          -self.square_height // 2 > rvo2_dy_obstacle_pose[1] or\
+                                          self.square_height // 2 < rvo2_dy_obstacle_pose[1]
 
                         if reach_goal or out_of_boundary:
                             check_dy_obstacles_reach_goal[i] = reach_goal
@@ -383,45 +407,196 @@ class Environment(gym.Env):
                         self.dy_obstacles_positions[i].append(check_reach_goal_pose[i])
                         self.dy_obstacles_velocities[i].append((0, 0))
 
+                # 정답용 로봇 경로 저장
+                '''
+                simulation에서 로봇이 충돌하였을 때 정답지의 도착 여부 확인 후 도착하였으면 정답 기록과 장애물 정보를 이용하여 trajectory
+                구성하여 replay buffer에 저장
+                step() 에서 목적지 도달 실패하면 그때 저장된 정답용 로봇 경로 데이터로 trajectory 생성
+                '''
+                if not self.answer_robot_reach_goal:
+                    # 정답용 로봇 경로 저장
+                    robot_idx = len(self.dy_obstacles_list)  # 장애물 세팅 후 로봇을 세팅하여서 마지막 위치가 로봇의 정보가 있다.
+                    answer_robot_pose = self.sim.getAgentPosition(robot_idx)
+                    answer_robot_velocity = self.sim.getAgentVelocity(robot_idx)
+                    self.answer_robot_pos_n_vel.append((*answer_robot_pose, *answer_robot_velocity))
+
+                    # 목적지 도달 검사
+                    answer_robot_goal = self.robot.goal
+                    self.answer_robot_reach_goal = np.linalg.norm(
+                        np.array(answer_robot_pose) - np.array(answer_robot_goal)
+                    ) < self.robot.radius + self.robot.goal_offset
+
+            # 정답용 로봇이 목적지 도달하지 못하였다면 해당 에피소드의 기록을 지운다.
+            if not self.answer_robot_reach_goal:
+                self.answer_robot_pos_n_vel.clear()
+
         # 로봇과 장애물의 상태 정보 출력
         # 로봇의 탐지 범위는 detection scope이다.
-        robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_goal]
+        if self.is_relative:
+            robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_relative_goal]
+        else:
+            robot_ob = [robot_state_data for robot_state_data in self.robot.self_state_w_goal]
         # dy_obstacle_ob = [dy_obstacle.self_state_wo_goal for dy_obstacle in self.dy_obstacles]
         # 로봇 관점에서 로봇의 감지 범위 내에 있는 장애물들의 방향 벡터를 장애물의 위치 정보대신 사용한다.
-        dy_obstacle_ob = [(dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py, 
-                           dy_obstacle.vx - self.robot.vx, dy_obstacle.vy - self.robot.vy, 
-                           dy_obstacle.radius) 
-                          for dy_obstacle in self.dy_obstacles if
-                          pow(pow((dy_obstacle.px - self.robot.px), 2) + pow((dy_obstacle.py - self.robot.py), 2),
-                              0.5) <= self.robot.detection_scope]
+        # dy_obstacle_ob = [
+        #     (dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py,
+        #      dy_obstacle.vx - self.robot.vx,
+        #      dy_obstacle.vy - self.robot.vy, dy_obstacle.radius)
+        #     for dy_obstacle in self.dy_obstacles
+        #     if pow(pow((dy_obstacle.px - self.robot.px), 2) + pow((dy_obstacle.py - self.robot.py), 2),0.5)
+        #        <= self.robot.detection_scope
+        # ]
+        if self.is_relative:
+            dy_obstacle_ob = [
+                (dy_obstacle.px - self.robot.px, dy_obstacle.py - self.robot.py,
+                 dy_obstacle.vx - self.robot.vx, dy_obstacle.vy - self.robot.vy,
+                 dy_obstacle.radius)
+                for dy_obstacle in self.dy_obstacles
+            ]
+        else:
+            dy_obstacle_ob = [
+                (dy_obstacle.px, dy_obstacle.py, dy_obstacle.vx, dy_obstacle.vy, dy_obstacle.radius)
+                for dy_obstacle in self.dy_obstacles
+            ]
+
         st_obstacle_ob = [st_obstacle.self_state_wo_goal_rectangle for st_obstacle in self.st_obstacles]
 
         # 멀리 있는 순으로 장애물을 정렬한다.
-        dy_obstacle_ob.sort(key=lambda x: (pow(x[0],2) + pow(x[1], 2))**0.5, reverse=True)
-
-        # 회전변환하여 로봇에 대한 상대좌표로 변환, holomonic 일때
-        if not self.robot.is_holonomic:
-            dy_obstacle_ob = [(*rotate2D([dy_obstacle[0], dy_obstacle[1]], (np.pi / 2 - self.robot.theta)),
-                               *rotate2D([dy_obstacle[2], dy_obstacle[3]], (np.pi / 2 - self.robot.theta)),
-                               dy_obstacle[4]) for dy_obstacle in dy_obstacle_ob]
+        if self.is_obstacle_sort:
+            dy_obstacle_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5, reverse=True)
 
         ob = [robot_ob] + [dy_obstacle_ob] + [st_obstacle_ob]
 
-        state = list(itertools.chain(*ob))
-        state_flatten = []  # 내부 튜플 제거...
-        for item in state:
-            if isinstance(item, tuple):
-                if len(item) != 0:
-                    for x in item:
-                        state_flatten.append(x)
-                else:
-                    pass
-            else:
-                state_flatten.append(item)
-
-        state = state_flatten
+        state = state_flattening(ob)
 
         return np.array(state) / self.scailing_factor
+
+    def set_answer_trajectories_to_buffer(self):
+        total_steps = len(self.answer_robot_pos_n_vel)
+        robot_goal = self.robot.goal
+        robot_radius = self.robot.radius
+        # 로봇이 목적지에 도달한 경로 정보까지만 저장해준다.
+        for step_cnt in range(total_steps - 1):
+            # answer state
+            step_dy_obstacles_ob = []
+            robot_pose = self.answer_robot_pos_n_vel[step_cnt][:2]
+            robot_vel = self.answer_robot_pos_n_vel[step_cnt][2:]
+            if self.is_relative:
+                step_robot_ob = [
+                    self.answer_robot_pos_n_vel[step_cnt] +
+                    (robot_goal[0] - robot_pose[0], robot_goal[1] - robot_pose[1], robot_radius)
+                ]
+            else:
+                step_robot_ob = [
+                    self.answer_robot_pos_n_vel[step_cnt] +
+                    (robot_goal[0], robot_goal[1], robot_radius)
+                ]
+            for i, dy_obstacle in enumerate(self.dy_obstacles):
+                # 로봇의 센서 탐지 범위는 고려하지 않았다.
+                dy_obstacle_px, dy_obstacle_py = self.dy_obstacles_positions[i][step_cnt]
+                dy_obstacle_vx, dy_obstacle_vy = self.dy_obstacles_velocities[i][step_cnt]
+                if self.is_relative:
+                    dy_obstacle_state = (dy_obstacle_px - robot_pose[0], dy_obstacle_py - robot_pose[1],
+                                         dy_obstacle_vx - robot_vel[0], dy_obstacle_vy - robot_vel[1],
+                                         dy_obstacle.radius)
+                else:
+                    dy_obstacle_state = (dy_obstacle_px, dy_obstacle_py,
+                                         dy_obstacle_vx, dy_obstacle_vy, dy_obstacle.radius)
+                step_dy_obstacles_ob.append(dy_obstacle_state)
+
+            # 멀리 있는 순으로 장애물을 정렬한다.
+            if self.is_obstacle_sort:
+                step_dy_obstacles_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5, reverse=True)
+
+            # 정적 장애물 제외
+            ob = step_robot_ob + step_dy_obstacles_ob
+            step_state = state_flattening(ob)
+
+            # 보상함수 처리
+            reward, is_terminal = self.set_answer_reward_function(step_state)
+
+            # answer new_state
+            new_step_dy_obstacles_ob = []
+            new_robot_pose = self.answer_robot_pos_n_vel[step_cnt + 1][:2]
+            new_robot_vel = self.answer_robot_pos_n_vel[step_cnt + 1][2:]
+            if self.is_relative:
+                new_step_robot_ob = [self.answer_robot_pos_n_vel[step_cnt + 1] +
+                                     (robot_goal[0] - new_robot_pose[0], robot_goal[1] - new_robot_pose[1],
+                                      robot_radius)]
+            else:
+                new_step_robot_ob = [self.answer_robot_pos_n_vel[step_cnt + 1] +
+                                     (robot_goal[0], robot_goal[1], robot_radius)]
+
+            for j, new_dy_obstacle in enumerate(self.dy_obstacles):
+                # 로봇의 센서 탐지 범위는 고려하지 않았다.
+                new_dy_obstacle_px, new_dy_obstacle_py = self.dy_obstacles_positions[j][step_cnt + 1]
+                new_dy_obstacle_vx, new_dy_obstacle_vy = self.dy_obstacles_velocities[j][step_cnt + 1]
+                if self.is_relative:
+                    dy_obstacle_state = (new_dy_obstacle_px - new_robot_pose[0], new_dy_obstacle_py - new_robot_pose[1],
+                                         new_dy_obstacle_vx - new_robot_vel[0], new_dy_obstacle_vy - new_robot_vel[1],
+                                         new_dy_obstacle.radius)
+                else:
+                    dy_obstacle_state = (new_dy_obstacle_px, new_dy_obstacle_py,
+                                         new_dy_obstacle_vx, new_dy_obstacle_vy,
+                                         new_dy_obstacle.radius)
+                new_step_dy_obstacles_ob.append(dy_obstacle_state)
+
+            # 멀리 있는 순으로 장애물을 정렬한다.
+            if self.is_obstacle_sort:
+                new_step_dy_obstacles_ob.sort(key=lambda x: (pow(x[0], 2) + pow(x[1], 2)) ** 0.5, reverse=True)
+
+            # 정적 장애물 제외
+            new_ob = new_step_robot_ob + new_step_dy_obstacles_ob
+
+            new_step_state = state_flattening(new_ob)
+
+            # action 추출
+            action = np.array(new_robot_vel)
+            action += np.random.normal(0.0, 1 * 0.1, size=2)
+            action = action.clip(-1, 1)
+
+            self.robot.policy.store_trajectory(step_state, action, reward, new_step_state, is_terminal)
+
+    def set_answer_reward_function(self, state):
+        # shape : (robot+obstacle Num, 5)
+        # reward for robot position
+
+        robot_position = state[:2]
+        robot_velocity = state[2:4]
+
+        # 0 time reward
+        reward = -0.05
+
+        # 1. reward for distance
+        target_distance_vector = (robot_position[0] - self.robot.goal[0], robot_position[1] - self.robot.goal[1])
+        target_norm = np.linalg.norm(target_distance_vector)
+
+        if self.target_norm is None:
+            self.target_norm = target_norm
+
+        # 목적지로의 이동 변화가 많을 수록 큰 보상
+        delta_reward = lambda x: np.tanh(x) if x > 0 else np.tanh(0.9 * x)
+        reward += delta_reward(self.target_norm - target_norm)
+
+        self.target_norm = target_norm
+
+        reach_goal = np.linalg.norm(robot_position - np.array(self.robot.goal)) \
+                     < self.robot.radius + self.robot.goal_offset  # offset
+
+        # 2. reward for terminal
+        if reach_goal:
+            reward += 10
+            done = True
+            info = "Goal"
+            print('goal!')
+            self.target_norm = None
+
+        else:
+            reward += 0
+            done = False
+            info = None
+
+        return reward, done
 
     def generate_random_position(self):
         '''
@@ -464,6 +639,30 @@ class Environment(gym.Env):
                                    robot_gy - obstacle_gy)) - dy_obstacle.radius - self.robot.radius > no_collision_distance:
                     dy_obstacle.gx = obstacle_gx
                     dy_obstacle.gy = obstacle_gy
+                    break
+
+    def generate_circle_position(self, circle_radius=4):
+        robot_px, robot_py = self.robot.position
+        robot_gx, robot_gy = self.robot.goal
+        no_collision_distance = self.safe_distance
+
+        for i, dy_obstacle in enumerate(self.dy_obstacles):
+            # obstacles 의 속성들(v_pref, radius) 변경
+            dy_obstacle.v_pref = np.random.uniform(0.5, 1.5)
+            dy_obstacle.radius = np.random.uniform(0.2, 0.3)
+
+            while True:
+                angle = np.random.random() * (2 * np.pi)
+                obstacle_px = circle_radius * np.cos(angle)
+                obstacle_py = circle_radius * np.sin(angle)
+
+                # 로봇과 랜덤 배치된 장애물의 거리를 재고 안전거리 이상 떨어져 있으면 장애물 위치 설정
+                if np.linalg.norm((robot_px - obstacle_px,
+                                   robot_py - obstacle_py)) - dy_obstacle.radius - self.robot.radius > no_collision_distance:
+                    dy_obstacle.px = obstacle_px
+                    dy_obstacle.py = obstacle_py
+                    dy_obstacle.gx = -obstacle_px
+                    dy_obstacle.gy = -obstacle_py
                     break
 
     def render(self, path_info=True, is_plot=False):
@@ -538,7 +737,7 @@ class Environment(gym.Env):
         def animate(frame):
             if frame == len(self.robot_position) - 1:
 
-                print('steps done. closing!')
+                # print('steps done. closing!')
                 # plt.ion()
                 plt.close(fig)
 

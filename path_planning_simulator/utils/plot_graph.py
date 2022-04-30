@@ -1,3 +1,4 @@
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 import time
@@ -69,6 +70,10 @@ def plot_data(data, smooth=1, show=True, save=False):
 
     # 레이아웃 수정
     plt.tight_layout(pad=0.5)
+
+    # 저장 폴더 만들기
+    if not os.path.exists('./learning_data/reward_graph'):
+        os.makedirs('./learning_data/reward_graph')
 
     # 표 시각화와 저장
     if save:
